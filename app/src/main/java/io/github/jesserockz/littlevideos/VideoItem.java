@@ -1,4 +1,4 @@
-package dev.jesserockz.littlevideos;
+package io.github.jesserockz.littlevideos;
 
 import android.net.Uri;
 

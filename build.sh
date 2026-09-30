@@ -9,7 +9,7 @@ BUILD_TOOLS_VERSION="35.0.0"
 COMPILE_SDK="35"
 MIN_SDK="24"
 TARGET_SDK="35"
-APP_ID="dev.jesserockz.littlevideos"
+APP_ID="io.github.jesserockz.littlevideos"
 
 # Overridable by the environment so a release build can stamp the version from
 # the release tag. The defaults are what a plain local build gets.

@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ADB="${ANDROID_HOME:-/opt/android-sdk}/platform-tools/adb"
 SERIAL="${1:-}"
-APP_ID="dev.jesserockz.littlevideos"
+APP_ID="io.github.jesserockz.littlevideos"
 APK="$(ls -t "$ROOT"/dist/*.apk 2>/dev/null | head -1)"
 SHOTS="$ROOT/shots"
 

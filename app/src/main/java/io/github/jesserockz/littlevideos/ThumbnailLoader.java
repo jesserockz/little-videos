@@ -1,4 +1,4 @@
-package dev.jesserockz.littlevideos;
+package io.github.jesserockz.littlevideos;
 
 import android.content.Context;
 import android.content.SharedPreferences;

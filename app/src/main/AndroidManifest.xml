@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.jesserockz.littlevideos">
+    package="io.github.jesserockz.littlevideos">
 
     <!-- Deliberately ZERO <uses-permission> entries.
          No INTERNET: the app cannot open a socket, by construction.

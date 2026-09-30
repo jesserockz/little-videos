@@ -115,8 +115,8 @@ install over it, and vice versa.
 
 The project is laid out the way Gradle expects, but there are no Gradle files, because
 `aapt2` requires the `package` attribute in `AndroidManifest.xml` while AGP 8 rejects it.
-To convert: delete `package="dev.jesserockz.littlevideos"` from the manifest and set
-`namespace = "dev.jesserockz.littlevideos"` in the module's `build.gradle.kts` instead.
+To convert: delete `package="io.github.jesserockz.littlevideos"` from the manifest and set
+`namespace = "io.github.jesserockz.littlevideos"` in the module's `build.gradle.kts` instead.
 `build.sh` will stop working once you do that.
 
 ## Layout
