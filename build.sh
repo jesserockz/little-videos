@@ -194,6 +194,13 @@ if unzip -p "$APK" AndroidManifest.xml | strings | grep -qi 'android.permission.
 fi
 echo "no permissions declared, no INTERNET: ok"
 
+# The applicationId is permanent once published: Android and F-Droid both treat
+# a changed one as a different app, and F-Droid matches the rebuilt APK to the
+# metadata by it. Assert rather than trust the manifest.
+BUILT_ID="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+[ "$BUILT_ID" = "$APP_ID" ] || die "APK declares package '$BUILT_ID', expected '$APP_ID'"
+echo "package id is $APP_ID: ok"
+
 step "Done"
 printf '%s\n' "$BADGING" | grep -E "^(package|sdkVersion|targetSdkVersion|application-label)" || true
 echo
