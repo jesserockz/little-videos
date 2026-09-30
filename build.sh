@@ -117,6 +117,9 @@ elif [ -n "${CI:-}" ] && [ -z "${ALLOW_GENERATED_KEY:-}" ]; then
 else
   [ -z "${CI:-}" ] || echo "ALLOW_GENERATED_KEY is set: generating a disposable key, NOT release-signable"
   mkdir -p "$(dirname "$KS")"
+  # keytool has no env:/file: password option, unlike apksigner, so this one
+  # call still passes the password as an argument. It only ever runs for the
+  # local throwaway key, never on the release path, which refuses to generate.
   keytool -genkeypair -keystore "$KS" \
     -storepass "$KS_PASS" -keypass "$KS_PASS" -alias "$KS_ALIAS" \
     -keyalg RSA -keysize 2048 -validity 10950 \
@@ -165,9 +168,19 @@ find "$OUT/dex" -name 'classes*.dex' -exec touch -d "@$SOURCE_DATE_EPOCH" {} +
 
 step "Aligning and signing"
 "$BT/zipalign" -f 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
-"$BT/apksigner" sign \
-  --ks "$KS" --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
-  --out "$APK" "$OUT/aligned.apk" 2>/dev/null
+# The password goes through the environment, not the command line: an argument
+# is visible to anyone who can run `ps` for as long as the process lives, which
+# on a shared CI runner is not nothing. apksigner reads env:<name> itself.
+# stderr is captured rather than discarded so a signing failure is legible;
+# apksigner is noisy on success, hence not printing it when it works.
+if ! SIGN_ERR="$(APKSIGNER_PASS="$KS_PASS" "$BT/apksigner" sign \
+    --ks "$KS" \
+    --ks-pass env:APKSIGNER_PASS \
+    --key-pass env:APKSIGNER_PASS \
+    --out "$APK" "$OUT/aligned.apk" 2>&1)"; then
+  printf '%s\n' "$SIGN_ERR" >&2
+  die "apksigner failed to sign $APK"
+fi
 "$BT/apksigner" verify "$APK" >/dev/null && echo "signature verified"
 
 step "Verifying the offline guarantee"
