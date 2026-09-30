@@ -1,0 +1,40 @@
+---
+# The labels the Release Drafter config depends on. Without them every PR
+# falls into "Other changes" and the version resolver defaults to a patch
+# bump, so the categories and semver bumps silently stop working.
+#
+# Apply with: tools/sync-labels.sh
+
+- name: breaking
+  color: b60205
+  description: Incompatible change; bumps the major version
+- name: major
+  color: b60205
+  description: Bumps the major version
+- name: feature
+  color: 0e8a16
+  description: New user-facing capability; bumps the minor version
+- name: minor
+  color: 0e8a16
+  description: Bumps the minor version
+- name: enhancement
+  color: 0e8a16
+  description: Improvement to an existing capability
+- name: fix
+  color: d93f0b
+  description: Bug fix; bumps the patch version
+- name: bug
+  color: d73a4a
+  description: Something is broken
+- name: patch
+  color: 0052cc
+  description: Bumps the patch version
+- name: build
+  color: 5319e7
+  description: Build script or toolchain
+- name: ci
+  color: 1d76db
+  description: Workflows and automation
+- name: documentation
+  color: 0075ca
+  description: README, F-Droid metadata and other docs

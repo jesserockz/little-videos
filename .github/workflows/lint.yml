@@ -30,3 +30,15 @@ jobs:
           set -euo pipefail
           yamllint --version
           yamllint --strict --format github -c .yamllint.yml .
+
+  metadata:
+    name: Store metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # The F-Droid recipe and build.sh can drift apart silently, and a
+      # description over the length limit is invisible until submission.
+      - name: Check the store metadata
+        run: ./tools/check-metadata.sh
