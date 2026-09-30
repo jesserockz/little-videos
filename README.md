@@ -101,6 +101,8 @@ script serves a local sideload build and a CI release build.
 | `VERSION_NAME`                        | `1.0`                                 | versionName and the `dist/` filename  |
 | `VERSION_CODE`                        | `1`                                   | versionCode                           |
 | `ALLOW_GENERATED_KEY`                 | unset                                 | In CI, opt in to a disposable key     |
+| `JDK_VERSION`                         | `17`                                  | Required JDK major version            |
+| `SOURCE_DATE_EPOCH`                   | commit date                           | Timestamp baked into the APK          |
 
 Two rules keep the two apart. With `CI` set and no keystore at `ANDROID_KEYSTORE`,
 `build.sh` refuses to run rather than quietly minting a throwaway key, because an APK
@@ -110,6 +112,29 @@ unset, it still generates the key on first run as it always has.
 The GitHub release APK is signed with a different key from the one `build.sh` makes
 locally, so a locally built install has to be uninstalled before a release APK will
 install over it, and vice versa.
+
+### Reproducible builds
+
+The APK is bit-for-bit reproducible: the same commit built on a different day,
+in a different timezone, under a different locale, from a different directory
+produces an identical file. That is what lets F-Droid rebuild a release, compare
+it against the published APK and then ship the developer-signed one rather than
+re-signing it.
+
+```sh
+./tools/verify-reproducible.sh
+```
+
+builds twice with the clock, timezone and locale moved between passes and diffs
+the result. CI runs it on every build, so a regression fails the PR rather than
+surfacing as an F-Droid verification failure months later.
+
+The one input that is not self-correcting is the JDK. javac 17 and javac 21 emit
+different bytecode from these sources, so `build.sh` requires JDK 17 and fails
+rather than quietly using another. Changing `JDK_VERSION`, the build-tools
+version or the compile SDK changes the output hash and needs a matching update to
+`fdroid/io.github.jesserockz.littlevideos.yml`.
+
 
 ### Opening it in Android Studio
 
@@ -131,7 +156,7 @@ app/src/main/java/.../
   VideoLibrary      SAF folder enumeration via DocumentsContract
   ThumbnailLoader   memory + disk thumbnail cache, duration extraction
   VideoItem, Prefs, Ui
-build.sh                           the whole build, about 120 lines
+build.sh                           the whole build, about 200 lines
 ```
 
 ## Licence

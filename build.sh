@@ -16,6 +16,26 @@ APP_ID="io.github.jesserockz.littlevideos"
 VERSION_CODE="${VERSION_CODE:-1}"
 VERSION_NAME="${VERSION_NAME:-1.0}"
 
+# Reproducible builds. F-Droid rebuilds this from the tagged source and compares
+# the result byte for byte against the published APK, so nothing in the output may
+# depend on when or where it was built.
+#   TZ      - zip stores DOS timestamps in local time.
+#   LC_ALL  - keeps glob and sort ordering stable.
+#   SOURCE_DATE_EPOCH - the standard knob; defaults to the commit date so any
+#                       checkout of a given commit agrees, and stays overridable.
+export TZ=UTC
+export LC_ALL=C
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+  if COMMIT_EPOCH="$(git -C "$ROOT" log -1 --pretty=%ct 2>/dev/null)" && [ -n "$COMMIT_EPOCH" ]; then
+    SOURCE_DATE_EPOCH="$COMMIT_EPOCH"
+  else
+    # No git metadata (a source tarball). Fall back to a fixed constant rather
+    # than the wall clock, so the build stays reproducible.
+    SOURCE_DATE_EPOCH=1600000000
+  fi
+fi
+export SOURCE_DATE_EPOCH
+
 BT="$SDK/build-tools/$BUILD_TOOLS_VERSION"
 ANDROID_JAR="$SDK/platforms/android-$COMPILE_SDK/android.jar"
 SRC="$ROOT/app/src/main"
@@ -29,18 +49,42 @@ KS_PASS="${ANDROID_KEYSTORE_PASSWORD:-littlevideos}"
 KS_ALIAS="${ANDROID_KEY_ALIAS:-littlevideos}"
 APK="$DIST/little-videos-$VERSION_NAME.apk"
 
-# Android's toolchain does not accept a JDK newer than 21, and -bootclasspath
-# requires -source 8, so pin javac/keytool/apksigner to JDK 17 when present.
-for CANDIDATE in /usr/lib/jvm/java-17-openjdk /usr/lib/jvm/java-21-openjdk; do
-  if [ -x "$CANDIDATE/bin/javac" ]; then
-    export JAVA_HOME="$CANDIDATE"
-    export PATH="$JAVA_HOME/bin:$PATH"
-    break
-  fi
-done
-
 die() { echo "error: $*" >&2; exit 1; }
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+
+# The JDK major version is a reproducibility input, not a detail: javac 17 and
+# javac 21 emit different bytecode for these same sources, so the APK hash
+# changes with the JDK. It is therefore pinned and verified rather than
+# discovered, and the Android toolchain will not accept anything newer than 21
+# anyway. Override only if you accept a different output hash.
+JDK_VERSION="${JDK_VERSION:-17}"
+
+jdk_major() { "$1/bin/javac" -version 2>&1 | awk '{print $2}' | cut -d. -f1; }
+
+# An already-correct JAVA_HOME wins, which is what actions/setup-java gives CI.
+if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/javac" ] &&
+   [ "$(jdk_major "$JAVA_HOME")" = "$JDK_VERSION" ]; then
+  :
+else
+  JAVA_HOME=""
+  for CANDIDATE in \
+    "/usr/lib/jvm/java-$JDK_VERSION-openjdk" \
+    "/usr/lib/jvm/java-$JDK_VERSION-openjdk-amd64" \
+    "/usr/lib/jvm/temurin-$JDK_VERSION-jdk-amd64" \
+    "/usr/lib/jvm/jdk-$JDK_VERSION"; do
+    if [ -x "$CANDIDATE/bin/javac" ]; then
+      JAVA_HOME="$CANDIDATE"
+      break
+    fi
+  done
+fi
+[ -n "$JAVA_HOME" ] || die "no JDK $JDK_VERSION found.
+       The APK is only reproducible when built with JDK $JDK_VERSION. Install it, or
+       point JAVA_HOME at it, or set JDK_VERSION to accept a different one."
+export JAVA_HOME
+export PATH="$JAVA_HOME/bin:$PATH"
+ACTUAL_JDK="$(jdk_major "$JAVA_HOME")"
+[ "$ACTUAL_JDK" = "$JDK_VERSION" ] || die "JAVA_HOME is JDK $ACTUAL_JDK, expected $JDK_VERSION"
 
 [ -d "$BT" ] || die "build-tools $BUILD_TOOLS_VERSION not found at $BT"
 [ -f "$ANDROID_JAR" ] || die "android.jar not found at $ANDROID_JAR"
@@ -48,6 +92,15 @@ command -v javac >/dev/null || die "javac not on PATH"
 command -v zip   >/dev/null || die "zip not on PATH"
 command -v unzip >/dev/null || die "unzip not on PATH"
 command -v strings >/dev/null || die "strings not on PATH (install binutils)"
+
+step "Toolchain"
+# Printed because these are exactly the inputs that decide the output hash.
+printf 'javac             %s\n' "$(javac -version 2>&1 | awk '{print $2}')"
+printf 'build-tools       %s\n' "$BUILD_TOOLS_VERSION"
+printf 'compile sdk       %s\n' "$COMPILE_SDK"
+printf 'zip               %s\n' "$(zip -v 2>/dev/null | awk '/This is Zip/ {print $4; exit}')"
+printf 'SOURCE_DATE_EPOCH %s (%s)\n' "$SOURCE_DATE_EPOCH" "$(date -u -d "@$SOURCE_DATE_EPOCH" '+%Y-%m-%dT%H:%M:%SZ')"
+printf 'version           %s (%s)\n' "$VERSION_NAME" "$VERSION_CODE"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"/{res,gen,classes,dex} "$DIST"
@@ -103,7 +156,12 @@ find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"
 
 step "Packaging"
 cp "$OUT/base.apk" "$OUT/unsigned.apk"
-(cd "$OUT/dex" && zip -q ../unsigned.apk classes*.dex)
+# aapt2 already writes fixed entry timestamps. The dex entries come from the zip
+# CLI, which would otherwise stamp them with the wall clock, so normalise the
+# mtimes first and pass -X to drop the Unix extended-timestamp extra field.
+# LC_ALL=C above makes the classes*.dex glob order stable.
+find "$OUT/dex" -name 'classes*.dex' -exec touch -d "@$SOURCE_DATE_EPOCH" {} +
+(cd "$OUT/dex" && zip -q -X -D ../unsigned.apk classes*.dex)
 
 step "Aligning and signing"
 "$BT/zipalign" -f 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
