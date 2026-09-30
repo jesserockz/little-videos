@@ -1,10 +1,11 @@
+---
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag of the draft to publish. Leave empty for the most recent draft."
+        description: Tag of the draft to publish. Empty means the most recent draft.
         required: false
         default: ""
 
@@ -18,13 +19,13 @@ concurrency:
 jobs:
   publish:
     name: Publish the draft release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
@@ -33,14 +34,22 @@ jobs:
             exit 1
           fi
 
-          # Drafts are effectively untagged until they are published, so the tag
-          # input only ever selects among drafts and is never used to address the
-          # release itself. Everything past this point goes by numeric id.
-          if [ -n "$TAG" ]; then
-            SELECT="$(printf '%s' "$RELEASES" | jq --arg tag "$TAG" '[.[] | select(.draft and .tag_name == $tag)] | sort_by(.created_at) | reverse | .[0] // empty')"
-            WANTED="draft tagged $TAG"
+          # Drafts are effectively untagged until published, so the tag input
+          # only ever selects among drafts. Everything past this point addresses
+          # the release by numeric id.
+          #
+          # Drafts whose tag_name is an untagged-<sha> placeholder are skipped:
+          # that is what GitHub leaves behind when something PATCHes a draft
+          # without re-sending tag_name, and publishing one would create the
+          # release under the placeholder tag.
+          REAL_DRAFTS='[.[] | select(.draft and (.tag_name | startswith("untagged-") | not))]'
+          if [ -n "$INPUT_TAG" ]; then
+            SELECT="$(printf '%s' "$RELEASES" | jq --arg tag "$INPUT_TAG" \
+              "$REAL_DRAFTS"' | map(select(.tag_name == $tag)) | first // empty')"
+            WANTED="draft tagged $INPUT_TAG"
           else
-            SELECT="$(printf '%s' "$RELEASES" | jq '[.[] | select(.draft)] | sort_by(.created_at) | reverse | .[0] // empty')"
+            SELECT="$(printf '%s' "$RELEASES" | jq \
+              "$REAL_DRAFTS"' | sort_by(.created_at) | reverse | first // empty')"
             WANTED="most recent draft"
           fi
 
@@ -50,31 +59,100 @@ jobs:
           fi
 
           RELEASE_ID="$(printf '%s' "$SELECT" | jq -r '.id')"
-          RELEASE_TAG="$(printf '%s' "$SELECT" | jq -r '.tag_name')"
-          ASSET_COUNT="$(printf '%s' "$SELECT" | jq '.assets | length')"
+          TAG="$(printf '%s' "$SELECT" | jq -r '.tag_name')"
+          TITLE="$(printf '%s' "$SELECT" | jq -r '.name // ""')"
+          TARGET="$(printf '%s' "$SELECT" | jq -r '.target_commitish // ""')"
+          ASSETS="$(printf '%s' "$SELECT" | jq '.assets | length')"
           BODY="$(printf '%s' "$SELECT" | jq -r '.body // ""')"
-          echo "selected release id=$RELEASE_ID tag=$RELEASE_TAG assets=$ASSET_COUNT"
+          [ -n "$TITLE" ] || TITLE="$TAG"
+          echo "selected release id=$RELEASE_ID tag=$TAG assets=$ASSETS"
 
-          if [ "$ASSET_COUNT" -eq 0 ]; then
-            echo "::error::release $RELEASE_ID ($RELEASE_TAG) has no assets attached. Wait for the Build workflow, or re-run it, before publishing."
+          if [ "$ASSETS" -eq 0 ]; then
+            echo "::error::release $TAG has no assets attached."
+            echo "::error::Wait for the Build workflow, or re-run it, before publishing."
             exit 1
           fi
 
           if printf '%s' "$BODY" | grep -q 'ASSETS_PENDING'; then
-            echo "::error::release $RELEASE_ID ($RELEASE_TAG) still carries the pending-assets caution, so the Build workflow has not finished with it."
+            echo "::error::release $TAG still carries the pending-assets caution,"
+            echo "::error::so the Build workflow has not finished with it."
             exit 1
           fi
 
-          if ! URL="$(gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false -f make_latest=true --jq '.html_url')"; then
+          # Publishing creates the git tag at target_commitish. The Build
+          # workflow pins that to the commit the APK was built from, so anything
+          # still pointing at a branch name would tag a moving target.
+          if ! printf '%s' "$TARGET" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::release $TAG targets '$TARGET' rather than a commit SHA."
+            echo "::error::Re-run the Build workflow to pin it before publishing."
+            exit 1
+          fi
+          echo "will tag $TAG at $TARGET"
+
+          # F-Droid reads the changelog out of the TAGGED checkout, not out of
+          # main, so it has to exist at the commit about to be tagged. The
+          # drafter commits it and the Build workflow pins the release to that
+          # commit; if it is missing here, that chain did not complete.
+          VERSION="${TAG#v}"
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag '$TAG' is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          IFS=. read -r MA MI PA <<< "$VERSION"
+          CODE=$(( MA * 10000 + MI * 100 + PA ))
+          CHANGELOG="fastlane/metadata/android/en-US/changelogs/$CODE.txt"
+          if ! gh api "repos/$REPO/contents/$CHANGELOG?ref=$TARGET" --jq '.sha' > /dev/null 2>&1; then
+            echo "::error::$CHANGELOG is missing at $TARGET."
+            echo "::error::Re-run Release Drafter, then Build, so the changelog is committed and the release is pinned to it."
+            exit 1
+          fi
+          echo "changelog present at $TARGET: $CHANGELOG"
+
+          # The APK's own filename encodes the version, so a mismatch between
+          # the tag and what was actually built shows up here rather than in
+          # an F-Droid verification failure weeks later.
+          EXPECTED="little-videos-$VERSION.apk"
+          if ! printf '%s' "$SELECT" | jq -e --arg n "$EXPECTED" '.assets | map(.name) | index($n)' > /dev/null; then
+            echo "::error::no asset named $EXPECTED on release $TAG."
+            echo "::error::attached: $(printf '%s' "$SELECT" | jq -r '[.assets[].name] | join(", ")')"
+            exit 1
+          fi
+          echo "asset present: $EXPECTED"
+
+          # Publish by id, and re-send tag_name and name: a PATCH to a draft
+          # that omits them makes GitHub reset the tag to an untagged-<sha>
+          # placeholder, which would then become the published tag. This is
+          # also why 'gh release edit <tag> --draft=false' is not used, since
+          # it sends draft=false on its own.
+          if ! gh api "repos/$REPO/releases/$RELEASE_ID" \
+              --method PATCH \
+              --raw-field "tag_name=$TAG" \
+              --raw-field "name=$TITLE" \
+              --raw-field "make_latest=true" \
+              --field "draft=false" \
+              --silent; then
             echo "::error::failed to publish release $RELEASE_ID"
             exit 1
           fi
 
-          echo "published $RELEASE_TAG: $URL"
+          if ! AFTER="$(gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.tag_name')"; then
+            echo "::error::could not re-read release $RELEASE_ID after publishing"
+            exit 1
+          fi
+          if [ "$AFTER" != "$TAG" ]; then
+            echo "::error::published tag is '$AFTER' but '$TAG' was expected"
+            exit 1
+          fi
+
+          # The draft's own html_url points at an untagged-* placeholder that
+          # 404s once published, so build the real URL from the tag.
+          URL="https://github.com/$REPO/releases/tag/$TAG"
+          echo "published $TAG: $URL"
           {
-            echo "### Published \`$RELEASE_TAG\`"
+            echo "### Published \`$TAG\`"
             echo
             echo "- Release id: \`$RELEASE_ID\`"
-            echo "- Assets: $ASSET_COUNT"
+            echo "- Tagged at: \`$TARGET\`"
+            echo "- Assets: $ASSETS"
             echo "- $URL"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,3 +1,4 @@
+---
 name: Release Drafter
 
 on:
@@ -10,44 +11,172 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: release-drafter-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-drafter
+  # Not cancel-in-progress: this job pushes a commit, and cancelling it
+  # part-way through would leave main and the draft disagreeing.
+  cancel-in-progress: false
+
+# This job commits the F-Droid changelog back to main. That push cannot loop
+# back here: GitHub does not start workflow runs for pushes made with the
+# built-in GITHUB_TOKEN. It also means nothing else re-runs for that commit,
+# which is why the draft descriptor below carries its SHA to the Build
+# workflow rather than relying on a second trigger.
 
 jobs:
   draft:
     name: Update the draft release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+
       - name: Draft the next release
         id: drafter
-        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9  # v7.7.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      # The Build workflow is chained off this one via workflow_run, and a
-      # workflow_run payload carries no job outputs. Hand the draft's identity
-      # over as an artifact instead, so the build can stamp the right version
-      # and attach the APK to the right release without needing to hunt for
-      # the draft with an elevated token.
+      - name: Derive the version
+        id: version
+        env:
+          RESOLVED_VERSION: ${{ steps.drafter.outputs.resolved_version }}
+          TAG_NAME: ${{ steps.drafter.outputs.tag_name }}
+          RELEASE_ID: ${{ steps.drafter.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_ID:-}" ] || [ -z "${RESOLVED_VERSION:-}" ] || [ -z "${TAG_NAME:-}" ]; then
+            echo "::error::release-drafter did not report an id, version and tag"
+            exit 1
+          fi
+          case "$TAG_NAME" in
+            untagged-*)
+              echo "::error::the draft's tag is already the placeholder '$TAG_NAME'"
+              exit 1
+              ;;
+          esac
+          if ! printf '%s' "$RESOLVED_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::drafted version '$RESOLVED_VERSION' is not major.minor.patch"
+            exit 1
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$RESOLVED_VERSION"
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "name=$RESOLVED_VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "drafted $TAG_NAME as versionCode $CODE"
+
+      - name: Update the F-Droid changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.drafter.outputs.id }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          DIR="fastlane/metadata/android/en-US/changelogs"
+          mkdir -p "$DIR"
+
+          if ! BODY="$(gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.body // ""')"; then
+            echo "::error::could not read the draft body"
+            exit 1
+          fi
+          printf '%s\n' "$BODY" | ./tools/fdroid-changelog.sh > "$DIR/$VERSION_CODE.txt"
+          echo "wrote $DIR/$VERSION_CODE.txt"
+          cat "$DIR/$VERSION_CODE.txt"
+
+          # Drop changelogs for versions that were drafted but never published.
+          # The resolved version moves when a label changes the bump, and a
+          # stale file would ship as the release note for a version that F-Droid
+          # never sees.
+          if ! RELEASES="$(gh api "repos/$REPO/releases?per_page=100")"; then
+            echo "::error::could not list releases"
+            exit 1
+          fi
+          PUBLISHED_MAX=0
+          PUBLISHED_TAGS="$(printf '%s' "$RELEASES" | jq -r '.[] | select(.draft | not) | .tag_name')"
+          if [ -n "$PUBLISHED_TAGS" ]; then
+            while read -r TAG; do
+              V="${TAG#v}"
+              printf '%s' "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || continue
+              IFS=. read -r MA MI PA <<< "$V"
+              C=$(( MA * 10000 + MI * 100 + PA ))
+              [ "$C" -gt "$PUBLISHED_MAX" ] && PUBLISHED_MAX="$C"
+            done <<< "$PUBLISHED_TAGS"
+          fi
+          echo "highest published versionCode: $PUBLISHED_MAX"
+
+          for F in "$DIR"/*.txt; do
+            [ -e "$F" ] || continue
+            CODE="$(basename "$F" .txt)"
+            printf '%s' "$CODE" | grep -qE '^[0-9]+$' || continue
+            if [ "$CODE" -gt "$PUBLISHED_MAX" ] && [ "$CODE" != "$VERSION_CODE" ]; then
+              echo "removing stale unreleased changelog $F"
+              rm -f "$F"
+            fi
+          done
+
+      - name: Commit the changelog
+        id: commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A fastlane/metadata
+          if git diff --cached --quiet; then
+            echo "changelog already up to date, nothing to commit"
+          else
+            git commit -m "Update F-Droid changelog for ${{ steps.version.outputs.name }}"
+            # Another merge can land while this job runs, which rejects the
+            # push. Rebase onto the new tip and try again rather than failing
+            # the release flow over a race.
+            BRANCH="${{ github.ref_name }}"
+            PUSHED=""
+            for ATTEMPT in 1 2 3; do
+              if git push origin "HEAD:$BRANCH"; then
+                PUSHED=yes
+                break
+              fi
+              echo "push rejected on attempt $ATTEMPT, rebasing onto origin/$BRANCH"
+              git fetch origin "$BRANCH"
+              if ! git rebase "origin/$BRANCH"; then
+                git rebase --abort || true
+                echo "::error::could not rebase the changelog commit onto origin/$BRANCH"
+                exit 1
+              fi
+            done
+            if [ -z "$PUSHED" ]; then
+              echo "::error::could not push the changelog commit after 3 attempts"
+              exit 1
+            fi
+            echo "pushed $(git rev-parse HEAD)"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # A workflow_run payload carries no job outputs, and its head_sha is the
+      # commit that triggered this run, not the changelog commit made above.
+      # The Build workflow needs the latter, so hand the whole thing over as an
+      # artifact.
       - name: Record the draft for the Build workflow
         env:
           RELEASE_ID: ${{ steps.drafter.outputs.id }}
-          RESOLVED_VERSION: ${{ steps.drafter.outputs.resolved_version }}
           TAG_NAME: ${{ steps.drafter.outputs.tag_name }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          SHA: ${{ steps.commit.outputs.sha }}
         run: |
           set -euo pipefail
-          if [ -z "${RELEASE_ID:-}" ] || [ -z "${RESOLVED_VERSION:-}" ]; then
-            echo "::error::release-drafter did not report a release id or version"
-            exit 1
-          fi
           mkdir -p draft
           printf '%s\n' "$RELEASE_ID" > draft/release-id
-          printf '%s\n' "$RESOLVED_VERSION" > draft/version
           printf '%s\n' "$TAG_NAME" > draft/tag
-          cat draft/release-id draft/version draft/tag
+          printf '%s\n' "$VERSION_NAME" > draft/version
+          printf '%s\n' "$VERSION_CODE" > draft/version-code
+          printf '%s\n' "$SHA" > draft/sha
+          head -n 1 draft/*
 
       - name: Upload the draft descriptor
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: draft-release
           path: draft/

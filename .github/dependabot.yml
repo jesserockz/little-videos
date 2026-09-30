@@ -1,0 +1,25 @@
+---
+version: 2
+
+updates:
+  # Keeps the SHA pins in .github/workflows current. Dependabot rewrites the
+  # digest and the trailing "# vX.Y.Z" comment together, preserving the existing
+  # spacing before the comment, so its PRs stay clean under .yamllint.yml.
+  #
+  # Note it updates pins, it does not create them: an action added as a bare tag
+  # stays a bare tag. Pin new ones by hand when adding them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "14:00"
+      timezone: Pacific/Auckland
+    labels:
+      - ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci

@@ -1,3 +1,4 @@
+---
 name: Build
 
 on:
@@ -23,18 +24,64 @@ jobs:
     name: Build APK
     # A workflow_run fires for every conclusion, including cancelled and failure.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
     steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Downloaded outside the workspace: actions/checkout wipes untracked
+      # files, which would delete the descriptor before it can be read.
+      - name: Fetch the draft descriptor
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          name: draft-release
+          path: ${{ runner.temp }}/draft
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The drafter commits the F-Droid changelog to main AFTER the push that
+      # triggered it, so workflow_run.head_sha is the commit before that one.
+      # Building it would produce a release tagged at a commit whose changelog
+      # file does not exist. The descriptor carries the real SHA.
+      - name: Resolve the commit and version
+        id: target
+        env:
+          DRAFT: ${{ runner.temp }}/draft
+        run: |
+          set -euo pipefail
+          REF=""
+          VERSION_NAME=""
+          VERSION_CODE=""
+          if [ -f "$DRAFT/sha" ]; then
+            REF="$(cat "$DRAFT/sha")"
+            VERSION_NAME="$(cat "$DRAFT/version")"
+            VERSION_CODE="$(cat "$DRAFT/version-code")"
+            if ! printf '%s' "$REF" | grep -qE '^[0-9a-f]{40}$'; then
+              echo "::error::the draft descriptor holds '$REF', not a commit SHA"
+              exit 1
+            fi
+            if ! printf '%s' "$VERSION_NAME" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::the draft descriptor holds version '$VERSION_NAME'"
+              exit 1
+            fi
+            echo "building $REF as $VERSION_NAME ($VERSION_CODE)"
+          else
+            # PR and manual builds are not releases; build.sh defaults apply.
+            echo "no draft descriptor, building the triggering commit at the build.sh default version"
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Empty means the ref that triggered the workflow.
+          ref: ${{ steps.target.outputs.ref }}
 
       - name: Set up JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
@@ -51,39 +98,6 @@ jobs:
           # 'yes' dies of SIGPIPE once sdkmanager stops reading, hence the '|| true'.
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-          ls "$ANDROID_HOME/build-tools" "$ANDROID_HOME/platforms"
-
-      - name: Fetch the draft descriptor
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: draft-release
-          path: draft
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-
-      - name: Resolve the version
-        id: version
-        run: |
-          set -euo pipefail
-          if [ -f draft/version ]; then
-            VERSION_NAME="$(cat draft/version)"
-          else
-            # PR and manual builds are not releases, so the build.sh defaults stand.
-            VERSION_NAME=""
-          fi
-          VERSION_CODE=""
-          if [ -n "$VERSION_NAME" ]; then
-            if ! printf '%s' "$VERSION_NAME" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-              echo "::error::drafted version '$VERSION_NAME' is not major.minor.patch"
-              exit 1
-            fi
-            IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION_NAME"
-            VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
-          fi
-          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "version_name=${VERSION_NAME:-<build.sh default>} version_code=${VERSION_CODE:-<build.sh default>}"
 
       - name: Decode the signing keystore
         id: keystore
@@ -96,7 +110,9 @@ jobs:
               echo "::error::ANDROID_KEYSTORE_BASE64 is not set, so this release build cannot be signed with the release key."
               exit 1
             fi
-            echo "::warning::No signing key available (expected for a fork PR). Building with a disposable key; this APK is not installable as an update and must not be released."
+            echo "::warning::No signing key available, expected for a fork PR."
+            echo "::warning::Building with a disposable key: this APK cannot install"
+            echo "::warning::as an update over a real release and must not be published."
             echo "allow_generated_key=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -108,18 +124,36 @@ jobs:
           fi
           echo "keystore=$RUNNER_TEMP/signing/release.p12" >> "$GITHUB_OUTPUT"
 
-      - name: Build
+      - name: Build and verify reproducibility
         env:
           ANDROID_KEYSTORE: ${{ steps.keystore.outputs.keystore }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ALLOW_GENERATED_KEY: ${{ steps.keystore.outputs.allow_generated_key }}
-          VERSION_NAME: ${{ steps.version.outputs.name }}
-          VERSION_CODE: ${{ steps.version.outputs.code }}
-        run: ./build.sh
+          VERSION_NAME: ${{ steps.target.outputs.name }}
+          VERSION_CODE: ${{ steps.target.outputs.code }}
+        # Builds twice and diffs the result rather than calling build.sh once.
+        # F-Droid rebuilds the tagged source and compares byte for byte against
+        # the published APK, so a non-deterministic build fails verification
+        # months later; catching it on the PR is much cheaper. Pass 1 uses this
+        # step's environment, so the artifacts it leaves are the release ones.
+        run: ./tools/verify-reproducible.sh
+
+      - name: Record the unsigned APK hash
+        run: |
+          set -euo pipefail
+          SUM="$(sha256sum build/unsigned.apk | cut -d' ' -f1)"
+          echo "unsigned APK sha256: $SUM"
+          {
+            echo "### Reproducible build"
+            echo
+            echo "Unsigned APK \`sha256\`: \`$SUM\`"
+            echo
+            echo "Any rebuild of this commit with the same toolchain must match."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: little-videos-apk
           path: dist/*.apk
@@ -130,13 +164,13 @@ jobs:
     name: Attach the APK to the draft release
     needs: build
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
     steps:
       - name: Fetch the draft descriptor
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           name: draft-release
           path: draft
@@ -144,7 +178,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Fetch the APK
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           name: little-videos-apk
           path: apk
@@ -156,10 +190,19 @@ jobs:
         run: |
           set -euo pipefail
           RELEASE_ID="$(cat draft/release-id)"
-          if [ -z "$RELEASE_ID" ]; then
-            echo "::error::the draft descriptor carries no release id"
+          TAG="$(cat draft/tag)"
+          if [ -z "$RELEASE_ID" ] || [ -z "$TAG" ]; then
+            echo "::error::the draft descriptor is missing an id or a tag"
             exit 1
           fi
+          case "$TAG" in
+            untagged-*)
+              echo "::error::the draft's tag is the placeholder '$TAG'."
+              echo "::error::Some earlier PATCH dropped tag_name. Fix the draft's tag by hand."
+              exit 1
+              ;;
+          esac
+
           APK="$(find apk -maxdepth 1 -name '*.apk' -print -quit)"
           if [ -z "$APK" ]; then
             echo "::error::no APK in the build artifact"
@@ -168,7 +211,9 @@ jobs:
           NAME="$(basename "$APK")"
 
           # Re-runs would otherwise collide with the asset the first run uploaded.
-          if ! EXISTING="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate --jq ".[] | select(.name == \"$NAME\") | .id")"; then
+          ASSET_QUERY=".[] | select(.name == \"$NAME\") | .id"
+          if ! EXISTING="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" \
+              --paginate --jq "$ASSET_QUERY")"; then
             echo "::error::could not list the assets on release $RELEASE_ID"
             exit 1
           fi
@@ -176,7 +221,8 @@ jobs:
             while read -r ASSET_ID; do
               [ -n "$ASSET_ID" ] || continue
               echo "replacing existing asset $ASSET_ID ($NAME)"
-              gh api --method DELETE "repos/$REPO/releases/$RELEASE_ID/assets/$ASSET_ID"
+              gh api --method DELETE \
+                "repos/$REPO/releases/$RELEASE_ID/assets/$ASSET_ID"
             done <<< "$EXISTING"
           fi
 
@@ -186,26 +232,62 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/vnd.android.package-archive" \
             --data-binary @"$APK" \
-            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$NAME" > /dev/null
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$NAME" \
+            > /dev/null
 
-      - name: Clear the pending-assets caution
+      # One PATCH carries every change to the draft. It pins target_commitish to
+      # the commit the APK was built from, so publishing later cuts the tag there
+      # rather than at whatever main's tip has become, and it drops the
+      # ASSETS_PENDING caution now that the APK is attached.
+      #
+      # tag_name and name ride along on every PATCH by necessity: updating a
+      # draft release without re-sending them makes GitHub reset its tag to an
+      # untagged-<sha> placeholder, which would then be published as the tag.
+      - name: Update the draft
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           RELEASE_ID="$(cat draft/release-id)"
-          if ! BODY="$(gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.body')"; then
-            echo "::error::could not read the body of release $RELEASE_ID"
+          TAG="$(cat draft/tag)"
+          # The same SHA the build job checked out: the drafter's changelog
+          # commit, not the push that triggered it.
+          BUILT_SHA="$(cat draft/sha)"
+
+          if ! printf '%s' "$BUILT_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::the draft descriptor holds '$BUILT_SHA', not a commit SHA"
             exit 1
           fi
-          if ! CLEANED="$(BODY="$BODY" python3 -c 'import os, re, sys; sys.stdout.write(re.sub(r"<!-- ASSETS_PENDING -->.*?<!-- /ASSETS_PENDING -->\s*", "", os.environ["BODY"], flags=re.S).lstrip())')"; then
-            echo "::error::failed to strip the ASSETS_PENDING caution"
+          if ! RELEASE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"; then
+            echo "::error::could not read release $RELEASE_ID"
             exit 1
           fi
-          if [ "$CLEANED" = "$BODY" ]; then
-            echo "no ASSETS_PENDING caution present, leaving the body alone"
-            exit 0
+
+          TITLE="$(printf '%s' "$RELEASE" | jq -r '.name // ""')"
+          [ -n "$TITLE" ] || TITLE="$TAG"
+
+          BODY="$(printf '%s' "$RELEASE" | jq -r '.body // ""')"
+          CLEANED="$(printf '%s\n' "$BODY" \
+            | sed '/<!-- ASSETS_PENDING -->/,/<!-- \/ASSETS_PENDING -->/d' \
+            | sed '/./,$!d')"
+
+          gh api "repos/$REPO/releases/$RELEASE_ID" \
+            --method PATCH \
+            --raw-field "tag_name=$TAG" \
+            --raw-field "name=$TITLE" \
+            --raw-field "target_commitish=$BUILT_SHA" \
+            --raw-field "body=$CLEANED" \
+            --field "draft=true" \
+            --silent
+
+          # The tag reset is intermittent, so confirm rather than assume.
+          if ! AFTER="$(gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.tag_name')"; then
+            echo "::error::could not re-read release $RELEASE_ID"
+            exit 1
           fi
-          gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -f body="$CLEANED" --jq '.id' > /dev/null
-          echo "caution removed; release $RELEASE_ID is ready to publish"
+          if [ "$AFTER" != "$TAG" ]; then
+            echo "::error::the draft's tag changed from '$TAG' to '$AFTER' during the update"
+            exit 1
+          fi
+          echo "draft $RELEASE_ID: tag $TAG, tagging $BUILT_SHA, caution cleared"

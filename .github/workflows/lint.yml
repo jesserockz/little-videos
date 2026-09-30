@@ -1,0 +1,32 @@
+---
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # yamllint ships with the ubuntu-24.04 runner image, so there is nothing
+      # to install. Print the version so an image bump shows up in the log.
+      - name: Run yamllint
+        run: |
+          set -euo pipefail
+          yamllint --version
+          yamllint --strict --format github -c .yamllint.yml .
