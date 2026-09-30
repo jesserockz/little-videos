@@ -1,0 +1,1 @@
+A local-only video player for a toddler. No internet, no permissions.

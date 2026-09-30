@@ -1,0 +1,5 @@
+First release.
+
+Grid of videos from one folder you choose, fullscreen playback with big
+controls, and a parent area behind a two second press on the gear plus a PIN.
+Zero permissions: the build fails if any are ever added.

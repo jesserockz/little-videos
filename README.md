@@ -87,6 +87,8 @@ keep the file if you want to keep updating the same install.
 
 `tools/smoke-test.sh` installs onto a connected device, launches the app, screenshots it
 and reports crashes. `tools/shot.sh <name>` grabs a screenshot.
+`tools/release-fingerprint.sh <version> [keystore]` builds a signed release APK with the
+real key and prints the signing certificate fingerprint F-Droid needs.
 
 ### Build-time overrides
 

@@ -1,0 +1,21 @@
+A local-only video player for a toddler. The feel of YouTube Kids, a grid of big
+tappable thumbnails, but it only ever shows video files from one folder you
+choose, and it has no way to reach the internet.
+
+The manifest declares zero permissions. Without INTERNET the app cannot open a
+socket at all. Storage is a single persisted Storage Access Framework grant to
+one folder you nominate, so the app can read that folder and nothing else on the
+device. There is no delete, rename, move or edit code path anywhere in the app,
+no ads, no in-app purchases, and no third-party code of any kind.
+
+The parent gate behind the gear icon needs a continuous two second press,
+deliberately longer than the platform long-press a toddler finds by accident.
+Behind it: the video folder, whether to include subfolders, what happens when a
+video ends, sort order, grid size, the PIN, and instructions for Android's
+screen pinning. Five wrong PIN entries lock the keypad for thirty seconds.
+
+There is no seek bar in the player, only a thin non-interactive progress line,
+and cards have no long-press behaviour, so there is nothing to trigger by
+accident.
+
+Screenshots show Big Buck Bunny and Sintel, (c) Blender Foundation, CC BY 3.0.
