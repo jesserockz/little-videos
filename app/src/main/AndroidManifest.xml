@@ -29,9 +29,14 @@
             </intent-filter>
         </activity>
 
+        <!-- sensorLandscape makes the first frame landscape even with rotation
+             locked to portrait. PlayerActivity then switches to full sensor
+             once the device is turned to landscape, so all four directions
+             (portrait included) work, ignoring the rotation lock. -->
         <activity
             android:name=".PlayerActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:screenOrientation="sensorLandscape"
             android:exported="false"
             android:theme="@style/PlayerTheme"/>
 
