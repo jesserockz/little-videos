@@ -1,0 +1,72 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+
+categories:
+  - title: "Breaking changes"
+    labels:
+      - "breaking"
+      - "major"
+  - title: "Features"
+    labels:
+      - "feature"
+      - "enhancement"
+  - title: "Bug fixes"
+    labels:
+      - "fix"
+      - "bug"
+  - title: "Build and CI"
+    labels:
+      - "build"
+      - "ci"
+  - title: "Documentation"
+    labels:
+      - "documentation"
+
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+change-title-escapes: '\<*_&'
+no-changes-template: "- No changes"
+
+version-resolver:
+  major:
+    labels:
+      - "breaking"
+      - "major"
+  minor:
+    labels:
+      - "feature"
+      - "enhancement"
+      - "minor"
+  patch:
+    labels:
+      - "fix"
+      - "bug"
+      - "build"
+      - "ci"
+      - "documentation"
+      - "patch"
+  default: patch
+
+# The caution block below is written on every draft refresh and is stripped again
+# by the Build workflow once it has attached the APK. The ASSETS_PENDING markers
+# are what the Build and Release workflows match on - do not remove or reword them.
+template: |
+  <!-- ASSETS_PENDING -->
+  > [!CAUTION]
+  > ## DO NOT PUBLISH THIS RELEASE YET - build assets have not been uploaded
+  >
+  > The Build workflow attaches the signed APK to this draft and then removes this
+  > notice. If you can still read this, the APK is either still building or the
+  > build failed. Publishing now would ship a release with no installable artifact.
+  <!-- /ASSETS_PENDING -->
+
+  ## What changed
+
+  $CHANGES
+
+  ## Install
+
+  Download `little-videos-$RESOLVED_VERSION.apk` below and either `adb install -r` it
+  or open it on the phone. The APK is self-signed, so Android asks you to allow
+  installing from that source.
+
+  **Full changelog:** $PREVIOUS_TAG...v$RESOLVED_VERSION

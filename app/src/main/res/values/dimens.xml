@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="page_padding">16dp</dimen>
+    <dimen name="grid_spacing_h">12dp</dimen>
+    <dimen name="grid_spacing_v">14dp</dimen>
+    <dimen name="header_height">56dp</dimen>
+    <dimen name="gear_size">56dp</dimen>
+    <dimen name="radius_card">14dp</dimen>
+    <dimen name="radius_panel">24dp</dimen>
+    <dimen name="radius_pill">10dp</dimen>
+    <dimen name="btn_back">72dp</dimen>
+    <dimen name="btn_play">88dp</dimen>
+    <dimen name="btn_small">60dp</dimen>
+    <dimen name="key_size">76dp</dimen>
+    <dimen name="dot_size">18dp</dimen>
+    <dimen name="row_padding_h">20dp</dimen>
+    <dimen name="row_padding_v">14dp</dimen>
+    <dimen name="text_title">17sp</dimen>
+    <dimen name="text_summary">14sp</dimen>
+</resources>

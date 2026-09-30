@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of the draft to publish. Leave empty for the most recent draft."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if ! RELEASES="$(gh api "repos/$REPO/releases?per_page=100")"; then
+            echo "::error::could not list the releases on $REPO"
+            exit 1
+          fi
+
+          # Drafts are effectively untagged until they are published, so the tag
+          # input only ever selects among drafts and is never used to address the
+          # release itself. Everything past this point goes by numeric id.
+          if [ -n "$TAG" ]; then
+            SELECT="$(printf '%s' "$RELEASES" | jq --arg tag "$TAG" '[.[] | select(.draft and .tag_name == $tag)] | sort_by(.created_at) | reverse | .[0] // empty')"
+            WANTED="draft tagged $TAG"
+          else
+            SELECT="$(printf '%s' "$RELEASES" | jq '[.[] | select(.draft)] | sort_by(.created_at) | reverse | .[0] // empty')"
+            WANTED="most recent draft"
+          fi
+
+          if [ -z "$SELECT" ]; then
+            echo "::error::no $WANTED found on $REPO"
+            exit 1
+          fi
+
+          RELEASE_ID="$(printf '%s' "$SELECT" | jq -r '.id')"
+          RELEASE_TAG="$(printf '%s' "$SELECT" | jq -r '.tag_name')"
+          ASSET_COUNT="$(printf '%s' "$SELECT" | jq '.assets | length')"
+          BODY="$(printf '%s' "$SELECT" | jq -r '.body // ""')"
+          echo "selected release id=$RELEASE_ID tag=$RELEASE_TAG assets=$ASSET_COUNT"
+
+          if [ "$ASSET_COUNT" -eq 0 ]; then
+            echo "::error::release $RELEASE_ID ($RELEASE_TAG) has no assets attached. Wait for the Build workflow, or re-run it, before publishing."
+            exit 1
+          fi
+
+          if printf '%s' "$BODY" | grep -q 'ASSETS_PENDING'; then
+            echo "::error::release $RELEASE_ID ($RELEASE_TAG) still carries the pending-assets caution, so the Build workflow has not finished with it."
+            exit 1
+          fi
+
+          if ! URL="$(gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false -f make_latest=true --jq '.html_url')"; then
+            echo "::error::failed to publish release $RELEASE_ID"
+            exit 1
+          fi
+
+          echo "published $RELEASE_TAG: $URL"
+          {
+            echo "### Published \`$RELEASE_TAG\`"
+            echo
+            echo "- Release id: \`$RELEASE_ID\`"
+            echo "- Assets: $ASSET_COUNT"
+            echo "- $URL"
+          } >> "$GITHUB_STEP_SUMMARY"

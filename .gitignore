@@ -1,0 +1,22 @@
+# Build output
+build/
+dist/
+shots/
+
+# Signing material - never commit a keystore or its passwords
+keystore/
+*.jks
+*.p12
+*.pfx
+*.keystore
+*.idsig
+
+# Local tooling
+local.properties
+.gradle/
+.idea/
+*.iml
+
+# Editor and OS cruft
+.DS_Store
+*~

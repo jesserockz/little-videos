@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Little Videos</string>
+
+    <!-- Grid -->
+    <string name="grid_gear_description">Parent settings. Hold for two seconds.</string>
+    <string name="grid_setup_title">Let us get set up</string>
+    <string name="grid_setup_message">A grown-up needs to choose the folder that holds the videos before anyone can watch.</string>
+    <string name="grid_setup_button">Set up</string>
+    <string name="grid_empty_title">No videos in that folder</string>
+    <string name="grid_empty_message">Folder: %1$s\n\nA grown-up can hold the gear button for two seconds to change settings.</string>
+    <string name="grid_unavailable_title">That folder is not available</string>
+    <string name="grid_unavailable_message">The app can no longer open the video folder. It may have been moved, or access may have been removed. A grown-up can choose the folder again.</string>
+    <string name="grid_thumbnail_description">Video thumbnail</string>
+
+    <!-- Player -->
+    <string name="player_back">Back to the videos</string>
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_next">Next video</string>
+    <string name="player_previous">Previous video</string>
+    <string name="player_replay">Start again</string>
+    <string name="player_error_title">This video will not play</string>
+    <string name="player_error_button">Back to the videos</string>
+
+    <!-- PIN gate -->
+    <string name="pin_title">Grown-ups only</string>
+    <string name="pin_prompt">Enter your PIN</string>
+    <string name="pin_wrong">Try again</string>
+    <string name="pin_locked">Too many tries. Please wait %1$d seconds.</string>
+    <string name="pin_cancel">Cancel</string>
+    <string name="pin_delete">Delete</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Parent settings</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_folder_title">Video folder</string>
+    <string name="settings_folder_not_set">Not set</string>
+    <string name="settings_folder_error">Could not use that folder</string>
+    <string name="settings_folder_no_picker">No file picker is available on this device</string>
+    <string name="settings_subfolders_title">Include subfolders</string>
+    <string name="settings_subfolders_on">Videos in folders inside the chosen folder are shown too</string>
+    <string name="settings_subfolders_off">Only videos directly in the chosen folder are shown</string>
+    <string name="settings_titles_title">Show titles</string>
+    <string name="settings_titles_on">Titles are shown under each video</string>
+    <string name="settings_titles_off">Titles are hidden</string>
+    <string name="settings_onend_title">When a video ends</string>
+    <string name="settings_sort_title">Sort videos by</string>
+    <string name="settings_grid_title">Grid size</string>
+    <string name="settings_pin_title">Change PIN</string>
+    <string name="settings_pin_summary">The PIN is 4 digits</string>
+    <string name="settings_rebuild_title">Rebuild thumbnails</string>
+    <string name="settings_rebuild_summary">Clears saved thumbnails and video lengths</string>
+    <string name="settings_rebuild_done">Thumbnails will be rebuilt</string>
+    <string name="settings_count_title">Videos found</string>
+    <string name="settings_count_none">Not scanned yet</string>
+    <string name="settings_count_value">%1$d</string>
+    <string name="settings_pinning_title">How to pin this app</string>
+    <string name="settings_pinning_summary">Keep a child inside Little Videos</string>
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_summary">Version and privacy</string>
+    <string name="settings_ok">OK</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_close">Close</string>
+
+    <string-array name="onend_options">
+        <item>Go back to the grid</item>
+        <item>Play the next video</item>
+        <item>Repeat the video</item>
+    </string-array>
+    <string-array name="sort_options">
+        <item>Name</item>
+        <item>Newest first</item>
+        <item>Oldest first</item>
+    </string-array>
+    <string-array name="grid_options">
+        <item>Large</item>
+        <item>Medium</item>
+        <item>Small</item>
+    </string-array>
+
+    <string name="pin_new_title">Enter a new 4-digit PIN</string>
+    <string name="pin_confirm_title">Enter the new PIN again</string>
+    <string name="pin_error_length">The PIN must be exactly 4 digits</string>
+    <string name="pin_mismatch">The PINs did not match. Please start again.</string>
+    <string name="pin_saved">PIN changed</string>
+
+    <string name="pinning_dialog_title">How to pin this app</string>
+    <string name="pinning_dialog_message">1. Open the device Settings and find Security (on some devices it is under Security and privacy, or Lock screen).\n\n2. Turn on App pinning. Also turn on the option to ask for a PIN or lock pattern before unpinning.\n\n3. Open Little Videos, then go to the app switcher (the recent apps screen).\n\n4. Tap the app icon at the top of the Little Videos card and choose Pin.\n\nTo unpin, follow the on-screen gesture and enter your device PIN.</string>
+
+    <string name="about_dialog_title">About</string>
+    <string name="about_dialog_message">Little Videos\nVersion %1$s\n\nThis app has no internet permission and never deletes or modifies files.</string>
+</resources>

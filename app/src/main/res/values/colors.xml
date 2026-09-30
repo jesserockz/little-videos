@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#14141F</color>
+    <color name="surface">#232336</color>
+    <color name="surfaceHigh">#2E2E46</color>
+    <color name="accent">#FFC93C</color>
+    <color name="accentAlt">#6FD8C4</color>
+    <color name="textPrimary">#FFFFFF</color>
+    <color name="textSecondary">#A9AEC4</color>
+    <color name="scrim">#99000000</color>
+    <color name="overlayDim">#55000000</color>
+    <color name="pill">#CC000000</color>
+    <color name="onAccent">#14141F</color>
+</resources>
