@@ -134,6 +134,12 @@ app/src/main/java/.../
 build.sh                           the whole build, about 120 lines
 ```
 
+## Licence
+
+Apache License 2.0. The full text is in [LICENSE](LICENSE).
+
+Copyright 2026 Jesse Hills.
+
 ## Deliberate omissions
 
 There is no seek bar in the player, only a thin non-interactive progress line. A toddler
