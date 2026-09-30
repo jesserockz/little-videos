@@ -6,13 +6,13 @@ and it has no way to reach the internet.
 
 ## The guarantees
 
-| Property                 | How it is enforced       |
-|:-------------------------|:-------------------------|
-| No internet access       | No `INTERNET` permission in the manifest. The app cannot open a socket. |
-| No permissions at all    | The manifest declares zero `<uses-permission>`. `build.sh` fails the build if any appear. |
-| No ads, no IAP           | No third-party code of any kind. No AndroidX, no Play Billing, no analytics. |
-| Never modifies your files | There is no delete, rename, move or edit code path anywhere in the app. |
-| Only your chosen folder  | Access is a single persisted Storage Access Framework grant to one folder. |
+| Property                                                                                  | How it is enforced                                                                        |
+|:------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------|
+| No internet access                                                                        | No `INTERNET` permission in the manifest. The app cannot open a socket.                   |
+| No permissions at all                                                                     | The manifest declares zero `<uses-permission>`. `build.sh` fails the build if any appear. |
+| No ads, no IAP                                                                            | No third-party code of any kind. No AndroidX, no Play Billing, no analytics.              |
+| Never modifies your files                                                                 | There is no delete, rename, move or edit code path anywhere in the app.                   |
+| Only your chosen folder                                                                   | Access is a single persisted Storage Access Framework grant to one folder.                |
 
 Storage access uses the system document picker rather than a storage permission, so
 the app can read exactly one folder you nominated and nothing else on the device.

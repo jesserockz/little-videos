@@ -1,0 +1,26 @@
+---
+# yamllint config for the workflow and action YAML in this repo.
+extends: default
+
+yaml-files:
+  - "*.yaml"
+  - "*.yml"
+
+rules:
+  # GitHub's 'on:' key is a YAML 1.1 boolean. Workflows cannot be written any
+  # other way, so keys are exempt while values stay strict.
+  truthy:
+    allowed-values:
+      - "true"
+      - "false"
+    check-keys: false
+
+  line-length:
+    max: 140
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+
+  # Deliberately off. GitHub workflows rely on quoting to keep values as
+  # strings: java-version: "17" and "3.10" must not become numbers, and
+  # only-when-needed would strip exactly those quotes.
+  quoted-strings: disable
