@@ -210,21 +210,21 @@ jobs:
           fi
           NAME="$(basename "$APK")"
 
-          # Clear every APK already on the draft, not just one with the same
-          # name. The drafted version can change between runs, and an APK from
-          # the superseded version would otherwise stay attached and be
-          # published alongside the real one.
+          # Only the same-name case: a re-run of this workflow uploads the
+          # same file again, and the API rejects a duplicate name. Clearing
+          # APKs from a superseded version is the drafter's job, since it is
+          # the thing that decides what version the draft represents.
           if ! EXISTING="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" \
-              --paginate --jq '.[] | select(.name | endswith(".apk") or endswith(".apk.idsig")) | "\(.id) \(.name)"')"; then
+              --paginate --jq --arg n "$NAME" '.[] | select(.name == $n) | .id')"; then
             echo "::error::could not list the assets on release $RELEASE_ID"
             exit 1
           fi
           if [ -n "$EXISTING" ]; then
-            while read -r ASSET_ID ASSET_NAME; do
+            while read -r ASSET_ID; do
               [ -n "$ASSET_ID" ] || continue
-              echo "removing existing asset $ASSET_NAME"
+              echo "replacing existing $NAME"
               gh api --method DELETE \
-                "repos/$REPO/releases/$RELEASE_ID/assets/$ASSET_ID"
+                "repos/$REPO/releases/assets/$ASSET_ID" < /dev/null
             done <<< "$EXISTING"
           fi
 

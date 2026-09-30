@@ -93,6 +93,34 @@ jobs:
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "drafted $TAG_NAME as versionCode $CODE"
 
+      # The drafter owns what this draft represents, so it owns clearing the
+      # artifacts of what it used to represent. The drafted version moves when
+      # a label changes the bump, and an APK built for the superseded version
+      # would otherwise stay attached and be published beside the real one.
+      # Build re-uploads immediately after this, and the ASSETS_PENDING
+      # caution stands until it does.
+      - name: Clear stale APKs from the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.drafter.outputs.id }}
+        run: |
+          set -euo pipefail
+          if ! ASSETS="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate \
+              --jq '.[] | select(.name | endswith(".apk") or endswith(".apk.idsig")) | "\(.id) \(.name)"')"; then
+            echo "::error::could not list the assets on release $RELEASE_ID"
+            exit 1
+          fi
+          if [ -z "$ASSETS" ]; then
+            echo "no APKs attached to the draft"
+            exit 0
+          fi
+          while read -r ASSET_ID ASSET_NAME; do
+            [ -n "$ASSET_ID" ] || continue
+            echo "removing $ASSET_NAME"
+            gh api --method DELETE "repos/$REPO/releases/assets/$ASSET_ID" < /dev/null
+          done <<< "$ASSETS"
+
       - name: Update the F-Droid changelog
         env:
           GH_TOKEN: ${{ github.token }}
