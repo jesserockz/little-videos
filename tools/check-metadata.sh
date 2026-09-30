@@ -39,6 +39,16 @@ limit title.txt 50
 limit short_description.txt 80
 limit full_description.txt 4000
 
+# F-Droid's submission guide asks for the short description to have no
+# trailing dot; it is rendered as a caption, not a sentence.
+SHORT="$FL/short_description.txt"
+if [ -f "$SHORT" ]; then
+  case "$(tr -d '\n' < "$SHORT")" in
+    *.) fail "short_description.txt ends with a full stop; F-Droid asks for none" ;;
+    *)  ok "short_description.txt has no trailing full stop" ;;
+  esac
+fi
+
 echo "== changelogs =="
 shopt -s nullglob
 CL=("$FL"/changelogs/*.txt)

@@ -80,5 +80,47 @@ OUT="$(body "$(printf -- '- First (#1) @a\n- Second (#2) @b\n- Third (#3) @c')" 
 check "keeps bullet order" "$(printf -- '- First (#1)\n- Second (#2)\n- Third (#3)')" "$OUT"
 
 echo
+echo "fdroid-add-build.py"
+
+META="fdroid/$(sed -n 's/^APP_ID="\(.*\)"$/\1/p' build.sh).yml"
+BACKUP="$(mktemp)"
+cp "$META" "$BACKUP"
+restore() { cp "$BACKUP" "$META"; }
+trap 'restore; rm -f "$BACKUP"' EXIT
+
+OUT="$(./tools/fdroid-add-build.py 1.1.0 2>&1)"
+check "adds a new version" "added 1.1.0 (10100) to $(basename "$META")" "$OUT"
+
+N="$(grep -c '^  - versionName: 1.1.0$' "$META")"
+check "writes exactly one entry" "1" "$N"
+check "derives the versionCode" "    versionCode: 10100" "$(grep '^    versionCode: 10100$' "$META")"
+check "derives the commit tag" "    commit: v1.1.0" "$(grep '^    commit: v1.1.0$' "$META")"
+check "derives the output path" "    output: dist/little-videos-1.1.0.apk" "$(grep '^    output: dist/little-videos-1.1.0.apk$' "$META")"
+check "stamps VERSION_NAME" "      - export VERSION_NAME=1.1.0" "$(grep '^      - export VERSION_NAME=1.1.0$' "$META")"
+check "stamps VERSION_CODE" "      - export VERSION_CODE=10100" "$(grep '^      - export VERSION_CODE=10100$' "$META")"
+check "bumps CurrentVersion" "CurrentVersion: 1.1.0" "$(grep '^CurrentVersion:' "$META")"
+check "bumps CurrentVersionCode" "CurrentVersionCode: 10100" "$(grep '^CurrentVersionCode:' "$META")"
+
+# The build block explains the versionCode formula in prose. A blanket
+# search and replace rewrites the multiplier in that comment.
+K="$(grep -c 'major\*10000 + minor\*100 + patch' "$META")"
+check "leaves the formula comment alone" "2" "$K"
+
+check "carries the toolchain forward" "2" "$(grep -c 'openjdk-17-jdk-headless' "$META")"
+
+OUT="$(./tools/fdroid-add-build.py 1.1.0 2>&1)"
+check "is idempotent" "1.1.0 is already in $(basename "$META"), nothing to do" "$OUT"
+
+OUT="$(./tools/fdroid-add-build.py 1.0.5 2>&1 | tail -1)"
+check "refuses to go backwards" "error: 1.0.5 is not newer than the last entry 1.1.0" "$OUT"
+
+OUT="$(./tools/fdroid-add-build.py 1.1 2>&1 | tail -1)"
+check "refuses a non-semver version" "error: '1.1' is not major.minor.patch" "$OUT"
+
+restore
+OUT="$(./tools/check-metadata.sh > /dev/null 2>&1; echo $?)"
+check "restored file still passes the metadata check" "0" "$OUT"
+
+echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

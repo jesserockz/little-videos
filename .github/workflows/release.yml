@@ -21,7 +21,13 @@ jobs:
     name: Publish the draft release
     runs-on: ubuntu-24.04
     steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
       - name: Publish
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -148,6 +154,9 @@ jobs:
           # 404s once published, so build the real URL from the tag.
           URL="https://github.com/$REPO/releases/tag/$TAG"
           echo "published $TAG: $URL"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
           {
             echo "### Published \`$TAG\`"
             echo
@@ -156,3 +165,54 @@ jobs:
             echo "- Assets: $ASSETS"
             echo "- $URL"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The version is only final once published, so the Builds entry is added
+      # here rather than while it is still a draft and the resolver could
+      # still move it.
+      - name: Record the release in the F-Droid metadata
+        env:
+          VERSION: ${{ steps.publish.outputs.version }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          ./tools/fdroid-add-build.py "$VERSION"
+          ./tools/check-metadata.sh
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add fdroid
+          if git diff --cached --quiet; then
+            echo "metadata already records $VERSION"
+            exit 0
+          fi
+          git commit -m "Record $VERSION in the F-Droid metadata"
+          PUSHED=""
+          for ATTEMPT in 1 2 3; do
+            if git push origin "HEAD:$BRANCH"; then
+              PUSHED=yes
+              break
+            fi
+            echo "push rejected on attempt $ATTEMPT, rebasing onto origin/$BRANCH"
+            git fetch origin "$BRANCH"
+            if ! git rebase "origin/$BRANCH"; then
+              git rebase --abort || true
+              echo "::error::could not rebase onto origin/$BRANCH"
+              exit 1
+            fi
+          done
+          if [ -z "$PUSHED" ]; then
+            echo "::error::could not push the metadata update after 3 attempts"
+            exit 1
+          fi
+
+      # Submits metadata/<appid>.yml to gitlab.com/fdroid/fdroiddata as a
+      # merge request from your fork. Skipped entirely, with a note, until
+      # GITLAB_TOKEN exists, so the first submission stays a deliberate act:
+      # the app is not in fdroiddata yet, and a new-app MR is reviewed
+      # against the inclusion policy rather than as a routine version bump.
+      - name: Submit the F-Droid metadata
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          FDROID_FORK: ${{ vars.FDROID_FORK }}
+          VERSION: ${{ steps.publish.outputs.version }}
+        run: ./tools/fdroid-open-mr.sh "$VERSION"
