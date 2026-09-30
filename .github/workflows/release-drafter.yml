@@ -109,9 +109,29 @@ jobs:
             echo "::error::could not read the draft body"
             exit 1
           fi
-          printf '%s\n' "$BODY" | ./tools/fdroid-changelog.sh > "$DIR/$VERSION_CODE.txt"
-          echo "wrote $DIR/$VERSION_CODE.txt"
-          cat "$DIR/$VERSION_CODE.txt"
+          TARGET="$DIR/$VERSION_CODE.txt"
+          RENDERED="$(printf '%s\n' "$BODY" | ./tools/fdroid-changelog.sh)"
+
+          # A draft with no merged PRs renders as a placeholder. Never let that
+          # overwrite a real changelog: the first release is assembled before
+          # any PR exists, so its notes are written by hand and would otherwise
+          # be replaced by "No changes" on the next push.
+          case "$RENDERED" in
+            "- No changes"|"no changes recorded")
+              if [ -s "$TARGET" ]; then
+                echo "drafted body has no changes; keeping the existing $TARGET"
+                cat "$TARGET"
+              else
+                printf '%s\n' "$RENDERED" > "$TARGET"
+                echo "wrote placeholder $TARGET"
+              fi
+              ;;
+            *)
+              printf '%s\n' "$RENDERED" > "$TARGET"
+              echo "wrote $TARGET"
+              cat "$TARGET"
+              ;;
+          esac
 
           # Deliberately no cleanup of changelogs for versions that were
           # drafted but never published. F-Droid only reads the file matching

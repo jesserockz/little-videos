@@ -210,17 +210,19 @@ jobs:
           fi
           NAME="$(basename "$APK")"
 
-          # Re-runs would otherwise collide with the asset the first run uploaded.
-          ASSET_QUERY=".[] | select(.name == \"$NAME\") | .id"
+          # Clear every APK already on the draft, not just one with the same
+          # name. The drafted version can change between runs, and an APK from
+          # the superseded version would otherwise stay attached and be
+          # published alongside the real one.
           if ! EXISTING="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" \
-              --paginate --jq "$ASSET_QUERY")"; then
+              --paginate --jq '.[] | select(.name | endswith(".apk") or endswith(".apk.idsig")) | "\(.id) \(.name)"')"; then
             echo "::error::could not list the assets on release $RELEASE_ID"
             exit 1
           fi
           if [ -n "$EXISTING" ]; then
-            while read -r ASSET_ID; do
+            while read -r ASSET_ID ASSET_NAME; do
               [ -n "$ASSET_ID" ] || continue
-              echo "replacing existing asset $ASSET_ID ($NAME)"
+              echo "removing existing asset $ASSET_NAME"
               gh api --method DELETE \
                 "repos/$REPO/releases/$RELEASE_ID/assets/$ASSET_ID"
             done <<< "$EXISTING"
