@@ -42,3 +42,15 @@ jobs:
       # description over the length limit is invisible until submission.
       - name: Check the store metadata
         run: ./tools/check-metadata.sh
+
+  tools:
+    name: Tool tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # fdroid-changelog.sh runs unattended in the drafter and its output is
+      # committed and published, so its edge cases need pinning down.
+      - name: Run the tool tests
+        run: ./tools/test-tools.sh

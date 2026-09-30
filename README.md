@@ -161,6 +161,35 @@ app/src/main/java/.../
 build.sh                           the whole build, about 200 lines
 ```
 
+## Releasing
+
+Releases are automatic apart from one button. Merge PRs, then run the Release
+workflow.
+
+1. **Merge a labelled PR.** The label decides the version bump, so an
+   unlabelled PR is a patch. `.github/labels.yml` lists them and
+   `tools/sync-labels.sh` applies them to the repo.
+2. **Release Drafter** runs on the push. It updates the draft release, writes
+   `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` from the
+   draft body and commits it, clears any APK from the previous drafted
+   version, and records the resulting commit for the build.
+3. **Build** runs next, chained off the drafter rather than racing it. It
+   checks out the commit the drafter recorded, builds twice to prove the
+   output is reproducible, attaches the APK to the draft, pins the release to
+   that commit and removes the "do not publish" caution.
+4. **Run the Release workflow** when you want to ship. It refuses to publish a
+   draft that has no assets, still carries the caution, is not pinned to a
+   commit, has no changelog at that commit, or has no APK matching the tag.
+   Then it publishes by release id, which creates the tag.
+
+The version lives only in the release tag. Nothing in the source tree carries
+a version number, and `build.sh` is handed one by CI.
+
+The first release is a special case: with nothing published, Release Drafter
+counts up from 0.0.0, so the drafter workflow forces the initial version once
+and then steps out of the way. Its changelog is written by hand, because there
+are no merged PRs to summarise, and the drafter will not overwrite it.
+
 ## Licence
 
 Apache License 2.0. The full text is in [LICENSE](LICENSE).
