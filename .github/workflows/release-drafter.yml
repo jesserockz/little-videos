@@ -122,6 +122,7 @@ jobs:
           done <<< "$ASSETS"
 
       - name: Update the F-Droid changelog
+        id: changelog
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -148,6 +149,7 @@ jobs:
             "- No changes"|"no changes recorded")
               if [ -s "$TARGET" ]; then
                 echo "drafted body has no changes; keeping the existing $TARGET"
+                echo "use_written=1" >> "$GITHUB_OUTPUT"
                 cat "$TARGET"
               else
                 printf '%s\n' "$RENDERED" > "$TARGET"
@@ -166,6 +168,52 @@ jobs:
           # a versionCode it actually builds, so a leftover is inert, and the
           # first version of this deleted a hand-written changelog the moment
           # the drafted version moved.
+
+      # With no merged PRs the drafter renders "- No changes", and that is what
+      # ships as the release note. The written changelog is the real content in
+      # that case, so put it in the body too rather than leaving the two to
+      # disagree.
+      - name: Use the written changelog in the release body
+        if: steps.changelog.outputs.use_written == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.drafter.outputs.id }}
+          TAG: ${{ steps.drafter.outputs.tag_name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          FILE="fastlane/metadata/android/en-US/changelogs/$VERSION_CODE.txt"
+          if ! RELEASE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"; then
+            echo "::error::could not read release $RELEASE_ID"
+            exit 1
+          fi
+          TITLE="$(printf '%s' "$RELEASE" | jq -r '.name // ""')"
+          [ -n "$TITLE" ] || TITLE="$TAG"
+          BODY="$(printf '%s' "$RELEASE" | jq -r '.body // ""')"
+
+          # awk rather than python here: this is a YAML block scalar, and an
+          # indentation-sensitive language cannot be embedded in one.
+          NEW="$(printf '%s\n' "$BODY" | awk -v f="$FILE" '
+            BEGIN { while ((getline l < f) > 0) notes = notes l "\n" }
+            # GitHub returns release bodies with CRLF, so anchored patterns
+            # never match unless the carriage return is stripped first.
+            { sub(/\r$/, "") }
+            /^## What changed$/ { print; print ""; printf "%s", notes; skip = 1; next }
+            /^## / { if (skip) print ""; skip = 0 }
+            !skip { print }
+          ')"
+          if [ "$NEW" = "$BODY" ]; then
+            echo "release body already carries the written changelog"
+            exit 0
+          fi
+          # tag_name and name ride along or GitHub resets the tag.
+          gh api "repos/$REPO/releases/$RELEASE_ID" --method PATCH \
+            --raw-field "tag_name=$TAG" \
+            --raw-field "name=$TITLE" \
+            --raw-field "body=$NEW" \
+            --field "draft=true" --silent
+          echo "release body now matches $FILE"
 
       - name: Commit the changelog
         id: commit
