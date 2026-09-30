@@ -32,9 +32,36 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
+      # release-drafter derives the next version from the last PUBLISHED
+      # release and has no way to seed a starting point, so with nothing
+      # published it counts up from 0.0.0 and the first release would be
+      # 0.0.1. Force the first one, and only the first one.
+      - name: Seed the first version
+        id: seed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INITIAL_VERSION: "1.0.0"
+        run: |
+          set -euo pipefail
+          if ! PUBLISHED="$(gh api "repos/$REPO/releases?per_page=100" --jq '[.[] | select(.draft | not)] | length')"; then
+            echo "::error::could not list releases"
+            exit 1
+          fi
+          if [ "$PUBLISHED" -eq 0 ]; then
+            echo "no published release yet, forcing $INITIAL_VERSION"
+            echo "version=$INITIAL_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "$PUBLISHED published release(s), letting the label resolver decide"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Draft the next release
         id: drafter
         uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9  # v7.7.0
+        with:
+          # Empty means resolve from labels as usual.
+          version: ${{ steps.seed.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
@@ -86,36 +113,11 @@ jobs:
           echo "wrote $DIR/$VERSION_CODE.txt"
           cat "$DIR/$VERSION_CODE.txt"
 
-          # Drop changelogs for versions that were drafted but never published.
-          # The resolved version moves when a label changes the bump, and a
-          # stale file would ship as the release note for a version that F-Droid
-          # never sees.
-          if ! RELEASES="$(gh api "repos/$REPO/releases?per_page=100")"; then
-            echo "::error::could not list releases"
-            exit 1
-          fi
-          PUBLISHED_MAX=0
-          PUBLISHED_TAGS="$(printf '%s' "$RELEASES" | jq -r '.[] | select(.draft | not) | .tag_name')"
-          if [ -n "$PUBLISHED_TAGS" ]; then
-            while read -r TAG; do
-              V="${TAG#v}"
-              printf '%s' "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || continue
-              IFS=. read -r MA MI PA <<< "$V"
-              C=$(( MA * 10000 + MI * 100 + PA ))
-              [ "$C" -gt "$PUBLISHED_MAX" ] && PUBLISHED_MAX="$C"
-            done <<< "$PUBLISHED_TAGS"
-          fi
-          echo "highest published versionCode: $PUBLISHED_MAX"
-
-          for F in "$DIR"/*.txt; do
-            [ -e "$F" ] || continue
-            CODE="$(basename "$F" .txt)"
-            printf '%s' "$CODE" | grep -qE '^[0-9]+$' || continue
-            if [ "$CODE" -gt "$PUBLISHED_MAX" ] && [ "$CODE" != "$VERSION_CODE" ]; then
-              echo "removing stale unreleased changelog $F"
-              rm -f "$F"
-            fi
-          done
+          # Deliberately no cleanup of changelogs for versions that were
+          # drafted but never published. F-Droid only reads the file matching
+          # a versionCode it actually builds, so a leftover is inert, and the
+          # first version of this deleted a hand-written changelog the moment
+          # the drafted version moved.
 
       - name: Commit the changelog
         id: commit
