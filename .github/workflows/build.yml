@@ -214,11 +214,13 @@ jobs:
           # same file again, and the API rejects a duplicate name. Clearing
           # APKs from a superseded version is the drafter's job, since it is
           # the thing that decides what version the draft represents.
-          if ! EXISTING="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" \
-              --paginate --jq --arg n "$NAME" '.[] | select(.name == $n) | .id')"; then
+          # gh's --jq takes a single expression and does not accept jq's own
+          # --arg, so the name is bound by piping into real jq instead.
+          if ! ASSETS_JSON="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100")"; then
             echo "::error::could not list the assets on release $RELEASE_ID"
             exit 1
           fi
+          EXISTING="$(printf '%s' "$ASSETS_JSON" | jq -r --arg n "$NAME" '.[] | select(.name == $n) | .id')"
           if [ -n "$EXISTING" ]; then
             while read -r ASSET_ID; do
               [ -n "$ASSET_ID" ] || continue
