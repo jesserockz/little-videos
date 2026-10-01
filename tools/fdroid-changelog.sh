@@ -14,12 +14,12 @@ BODY="$(cat)"
 
 CHANGES="$(printf '%s\n' "$BODY" \
   | sed '/<!-- ASSETS_PENDING -->/,/<!-- \/ASSETS_PENDING -->/d' \
-  | sed -n '/^## What changed/,/^## /p' \
-  | sed '/^## /d' \
+  | sed -n '/^## What changed/,/^## Install/p' \
+  | sed '/^#\{2,\} /d' \
+  | sed 's/[[:space:]]*$//' \
   | sed 's/ *@[A-Za-z0-9._-]\+ *$//' \
   | sed 's/\[\([^]]*\)\](\([^)]*\))/\1/g' \
   | sed 's/[*_`]//g' \
-  | sed 's/[[:space:]]*$//' \
   | grep -v '^$' || true)"
 
 if [ -z "$CHANGES" ]; then

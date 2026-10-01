@@ -85,6 +85,55 @@ fi
 OUT="$(body "$(printf -- '- First (#1) @a\n- Second (#2) @b\n- Third (#3) @c')" | $CL)"
 check "keeps bullet order" "$(printf -- '- First (#1)\n- Second (#2)\n- Third (#3)')" "$OUT"
 
+# Release Drafter renders categories as headings, at ## by default.
+CATS='## Features
+
+- Open the video player in landscape, then allow any rotation (#3) @jesserockz
+
+## Bug fixes
+
+- Use the written changelog in the release body (#2) @jesserockz
+
+## Build and CI
+
+- Make the draft release the one source of the F-Droid changelog (#4) @jesserockz'
+CATS_WANT="$(printf -- '- Open the video player in landscape, then allow any rotation (#3)\n- Use the written changelog in the release body (#2)\n- Make the draft release the one source of the F-Droid changelog (#4)')"
+
+OUT="$(body "$CATS" | $CL)"
+check "categories at ## give only the bullets" "$CATS_WANT" "$OUT"
+
+OUT="$(body "$CATS" | sed 's/$/\r/' | $CL | tr -d '\r')"
+check "categories at ## with CRLF line endings" "$CATS_WANT" "$OUT"
+
+OUT="$(body "${CATS//\#\# /\#\#\# }" | $CL)"
+check "categories at ### give only the bullets" "$CATS_WANT" "$OUT"
+
+OUT="$(body "$(printf '## Features\n\n- No changes')" | $CL)"
+check "categorised placeholder drops the heading" "- No changes" "$OUT"
+
+OUT="$(body "$(printf '## Features\n')" | $CL)"
+check "categories with no bullets record nothing" "no changes recorded" "$OUT"
+
+OUT="$(body "$CATS" | sed '/^## Install/,$d' | $CL)"
+check "a body with no Install heading runs to the end" "$CATS_WANT" "$OUT"
+
+CATLONG="$(for c in Features Fixes; do
+  printf '## %s\n\n' "$c"
+  for i in $(seq 1 8); do
+    printf -- '- A reasonably wordy change number %s taking up room (#%s) @jesserockz\n' "$i" "$i"
+  done
+  printf '\n'
+done)"
+OUT="$(body "$CATLONG" | $CL)"
+N="$(printf '%s' "$OUT" | wc -c)"
+if [ "$N" -le 500 ]; then PASS=$((PASS+1)); echo "  ok   categorised truncation fits $N/500 chars"; else FAIL=$((FAIL+1)); echo "  FAIL categorised truncation is $N chars"; fi
+if printf '%s\n' "$OUT" | grep -q '^#'; then FAIL=$((FAIL+1)); echo "  FAIL heading leaked into truncated output"; else PASS=$((PASS+1)); echo "  ok   no heading in truncated output"; fi
+LAST="$(printf '%s\n' "$OUT" | tail -2)"
+case "$LAST" in
+  "- "*$'\n...') PASS=$((PASS+1)); echo "  ok   categorised truncation ends on a bullet then an ellipsis" ;;
+  *) FAIL=$((FAIL+1)); echo "  FAIL categorised truncation ends badly: $LAST" ;;
+esac
+
 echo
 echo "fdroid-add-build.sh"
 
