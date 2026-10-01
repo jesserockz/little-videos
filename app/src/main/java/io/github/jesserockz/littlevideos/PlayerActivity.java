@@ -1,10 +1,13 @@
 package io.github.jesserockz.littlevideos;
 
 import android.app.Activity;
+import android.content.pm.ActivityInfo;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.OrientationEventListener;
+import android.view.Surface;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ProgressBar;
@@ -19,6 +22,7 @@ public class PlayerActivity extends Activity {
     private static final long HIDE_DELAY_MS = 3500;
     private static final long PROGRESS_INTERVAL_MS = 250;
     private static final float DISABLED_ALPHA = 0.3f;
+    private static final int MATCH_TOLERANCE_DEG = 30;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Prefs prefs;
@@ -38,6 +42,8 @@ public class PlayerActivity extends Activity {
     private boolean wantPlay = true;
     private boolean errorShown = false;
     private int resumePos = 0;
+    private boolean rotationUnlocked = false;
+    private OrientationEventListener orientationListener;
 
     private final Runnable hideRunnable = new Runnable() {
         @Override
@@ -73,11 +79,23 @@ public class PlayerActivity extends Activity {
             index = savedInstanceState.getInt("index", index);
             resumePos = savedInstanceState.getInt("pos", 0);
             wantPlay = savedInstanceState.getBoolean("playing", true);
+            rotationUnlocked = savedInstanceState.getBoolean("rotationUnlocked", false);
         }
         if (items.isEmpty() || index < 0 || index >= items.size()) {
             finish();
             return;
         }
+
+        // The manifest starts us in landscape; once restored as unlocked, rotate freely.
+        if (rotationUnlocked) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+        }
+        orientationListener = new OrientationEventListener(this) {
+            @Override
+            public void onOrientationChanged(int degrees) {
+                onDeviceOrientation(degrees);
+            }
+        };
 
         setContentView(R.layout.activity_player);
         root = findViewById(R.id.player_root);
@@ -150,10 +168,16 @@ public class PlayerActivity extends Activity {
         }
         handler.removeCallbacks(progressRunnable);
         handler.post(progressRunnable);
+        if (!rotationUnlocked && orientationListener.canDetectOrientation()) {
+            orientationListener.enable();
+        }
     }
 
     @Override
     protected void onPause() {
+        if (orientationListener != null) {
+            orientationListener.disable();
+        }
         handler.removeCallbacks(hideRunnable);
         handler.removeCallbacks(progressRunnable);
         if (video != null && !errorShown) {
@@ -175,6 +199,7 @@ public class PlayerActivity extends Activity {
         outState.putInt("index", index);
         outState.putInt("pos", resumePos);
         outState.putBoolean("playing", wantPlay);
+        outState.putBoolean("rotationUnlocked", rotationUnlocked);
     }
 
     @Override
@@ -197,6 +222,38 @@ public class PlayerActivity extends Activity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             Ui.applyImmersive(this);
+        }
+    }
+
+    /**
+     * Stays landscape (even if held portrait) until the device is physically turned to match the
+     * landscape screen once, then allows all four rotations regardless of the rotation lock.
+     */
+    private void onDeviceOrientation(int degrees) {
+        if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN || rotationUnlocked) {
+            return;
+        }
+        int shown;
+        switch (getWindowManager().getDefaultDisplay().getRotation()) {
+            case Surface.ROTATION_90:
+                shown = 90;
+                break;
+            case Surface.ROTATION_180:
+                shown = 180;
+                break;
+            case Surface.ROTATION_270:
+                shown = 270;
+                break;
+            case Surface.ROTATION_0:
+            default:
+                shown = 0;
+                break;
+        }
+        int diff = Math.abs(degrees - (360 - shown) % 360);
+        if (Math.min(diff, 360 - diff) <= MATCH_TOLERANCE_DEG) {
+            rotationUnlocked = true;
+            orientationListener.disable();
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
         }
     }
 
