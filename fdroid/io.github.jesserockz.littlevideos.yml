@@ -60,6 +60,24 @@ Builds:
       - export VERSION_NAME=1.0.0
       - export VERSION_CODE=10000
       - ./build.sh
+  - versionName: 1.1.0
+    versionCode: 10100
+    commit: v1.1.0
+    output: dist/little-videos-1.1.0.apk
+    sudo:
+      - apt-get update
+      - apt-get install -y openjdk-17-jdk-headless zip unzip binutils
+    build:
+      # build.sh pins everything that decides the output hash: TZ=UTC, LC_ALL=C,
+      # SOURCE_DATE_EPOCH from the commit date, and JDK 17. It refuses to run on
+      # a different JDK major version rather than emit a differing APK.
+      #
+      # VERSION_CODE is derived from the tag as major*10000 + minor*100 + patch,
+      # which is what the GitHub release workflow does.
+      - export ANDROID_HOME=$$SDK$$
+      - export VERSION_NAME=1.1.0
+      - export VERSION_CODE=10100
+      - ./build.sh
 
 MaintainerNotes: |-
   No Gradle. The build runs aapt2, javac, d8, zipalign and apksigner straight
@@ -83,5 +101,5 @@ MaintainerNotes: |-
 # adding one Builds entry per release by hand.
 AutoUpdateMode: None
 UpdateCheckMode: Static
-CurrentVersion: 1.0.0
-CurrentVersionCode: 10000
+CurrentVersion: 1.1.0
+CurrentVersionCode: 10100
