@@ -111,6 +111,13 @@ Two rules keep the two apart. With `CI` set and no keystore at `ANDROID_KEYSTORE
 signed with the wrong key cannot install over an existing one. Locally, with `CI`
 unset, it still generates the key on first run as it always has.
 
+In CI the keystore comes from the `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS` repository secrets. The Build
+workflow uses them, and so does the Release workflow, which rebuilds the commit it
+is about to tag and so needs the same key to reproduce the signed APK. Both call the
+same composite action, `.github/actions/android-build`, which sets up the toolchain
+and runs `./build.sh` then `tools/verify-reproducible.sh`, so there is one build path to keep honest.
+
 The GitHub release APK is signed with a different key from the one `build.sh` makes
 locally, so a locally built install has to be uninstalled before a release APK will
 install over it, and vice versa.
@@ -124,11 +131,11 @@ it against the published APK and then ship the developer-signed one rather than
 re-signing it.
 
 ```sh
-./tools/verify-reproducible.sh
+./build.sh && ./tools/verify-reproducible.sh
 ```
 
-builds twice with the clock, timezone and locale moved between passes and diffs
-the result. CI runs it on every build, so a regression fails the PR rather than
+builds, then rebuilds with the clock, timezone and locale moved and diffs the
+unsigned and signed APKs. CI runs it on every build, so a regression fails the PR rather than
 surfacing as an F-Droid verification failure months later.
 
 The one input that is not self-correcting is the JDK. javac 17 and javac 21 emit
@@ -169,26 +176,33 @@ workflow.
 1. **Merge a labelled PR.** The label decides the version bump, so an
    unlabelled PR is a patch. `.github/labels.yml` lists them and
    `tools/sync-labels.sh` applies them to the repo.
-2. **Release Drafter** runs on the push. It updates the draft release, writes
-   `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` from the
-   draft body and commits it, clears any APK from the previous drafted
-   version, and records the resulting commit for the build.
+2. **Release Drafter** runs on the push. It updates the draft release, always
+   writes `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` from
+   the draft body and commits it, clears any APK from the previous drafted
+   version, and records the resulting commit for the build. Pushing to main
+   regenerates the draft body, so it overwrites any manual edits to the draft.
 3. **Build** runs next, chained off the drafter rather than racing it. It
    checks out the commit the drafter recorded, builds twice to prove the
    output is reproducible, attaches the APK to the draft, pins the release to
    that commit and removes the "do not publish" caution.
 4. **Run the Release workflow** when you want to ship. It refuses to publish a
    draft that has no assets, still carries the caution, is not pinned to a
-   commit, has no changelog at that commit, or has no APK matching the tag.
-   Then it publishes by release id, which creates the tag.
+   commit, or has no APK matching the tag. If you edited the draft body by
+   hand, Release rewrites the changelog to match it, commits that with the
+   built commit's date so the APK stays reproducible, and tags that commit
+   (the change is also pushed to main). Before anything is pushed it rebuilds
+   the exact commit it is about to tag and refuses to publish unless the result
+   is byte-identical to the APK attached to the draft: the same check F-Droid
+   will run against the tag, done up front, on every release. Then it
+   publishes by release id, which creates the tag.
 
 The version lives only in the release tag. Nothing in the source tree carries
 a version number, and `build.sh` is handed one by CI.
 
 The first release is a special case: with nothing published, Release Drafter
 counts up from 0.0.0, so the drafter workflow forces the initial version once
-and then steps out of the way. Its changelog is written by hand, because there
-are no merged PRs to summarise, and the drafter will not overwrite it.
+and then steps out of the way. There are no merged PRs to summarise, so write
+its notes by editing the draft before running Release.
 
 ## Licence
 

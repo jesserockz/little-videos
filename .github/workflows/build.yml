@@ -80,83 +80,24 @@ jobs:
           # Empty means the ref that triggered the workflow.
           ref: ${{ steps.target.outputs.ref }}
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Ensure the Android SDK components
-        run: |
-          set -euo pipefail
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager not found at $SDKMANAGER"
-            exit 1
-          fi
-          # No-ops when the runner image already ships these, which it normally does.
-          # 'yes' dies of SIGPIPE once sdkmanager stops reading, hence the '|| true'.
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Decode the signing keystore
-        id: keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            if [ "${{ github.event_name }}" = "workflow_run" ]; then
-              echo "::error::ANDROID_KEYSTORE_BASE64 is not set, so this release build cannot be signed with the release key."
-              exit 1
-            fi
-            echo "::warning::No signing key available, expected for a fork PR."
-            echo "::warning::Building with a disposable key: this APK cannot install"
-            echo "::warning::as an update over a real release and must not be published."
-            echo "allow_generated_key=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mkdir -p "$RUNNER_TEMP/signing"
-          ( umask 077; printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/signing/release.p12" )
-          if [ ! -s "$RUNNER_TEMP/signing/release.p12" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a keystore"
-            exit 1
-          fi
-          echo "keystore=$RUNNER_TEMP/signing/release.p12" >> "$GITHUB_OUTPUT"
-
+      # Release builds (workflow_run) require the real key; PR/manual builds may use a
+      # disposable one. Empty version inputs mean build.sh defaults.
       - name: Build and verify reproducibility
-        env:
-          ANDROID_KEYSTORE: ${{ steps.keystore.outputs.keystore }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ALLOW_GENERATED_KEY: ${{ steps.keystore.outputs.allow_generated_key }}
-          VERSION_NAME: ${{ steps.target.outputs.name }}
-          VERSION_CODE: ${{ steps.target.outputs.code }}
-        # Builds twice and diffs the result rather than calling build.sh once.
-        # F-Droid rebuilds the tagged source and compares byte for byte against
-        # the published APK, so a non-deterministic build fails verification
-        # months later; catching it on the PR is much cheaper. Pass 1 uses this
-        # step's environment, so the artifacts it leaves are the release ones.
-        run: ./tools/verify-reproducible.sh
-
-      - name: Record the unsigned APK hash
-        run: |
-          set -euo pipefail
-          SUM="$(sha256sum build/unsigned.apk | cut -d' ' -f1)"
-          echo "unsigned APK sha256: $SUM"
-          {
-            echo "### Reproducible build"
-            echo
-            echo "Unsigned APK \`sha256\`: \`$SUM\`"
-            echo
-            echo "Any rebuild of this commit with the same toolchain must match."
-          } >> "$GITHUB_STEP_SUMMARY"
+        id: build
+        uses: ./.github/actions/android-build
+        with:
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          require-key: ${{ github.event_name == 'workflow_run' }}
+          version-name: ${{ steps.target.outputs.name }}
+          version-code: ${{ steps.target.outputs.code }}
 
       - name: Upload the APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: little-videos-apk
-          path: dist/*.apk
+          path: ${{ steps.build.outputs.apk }}
           if-no-files-found: error
           retention-days: 14
 

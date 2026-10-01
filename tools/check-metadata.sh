@@ -11,6 +11,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+for tool in yq jq; do
+  command -v "$tool" > /dev/null || { echo "$tool is not on PATH" >&2; exit 1; }
+done
+
 FAIL=0
 fail() { echo "FAIL: $*" >&2; FAIL=1; }
 ok()   { echo "  ok: $*"; }
@@ -79,18 +83,12 @@ grep -q "openjdk-$JDK-jdk" "$META" \
   || fail "the recipe does not install openjdk-$JDK-jdk, but build.sh requires JDK $JDK"
 
 # Every Builds entry has to agree with what build.sh would actually produce.
-if ! ENTRIES="$(python3 - "$META" <<'PY'
-import sys, yaml
-meta = yaml.safe_load(open(sys.argv[1]))
-for b in meta.get("Builds") or []:
-    print("\t".join([
-        str(b.get("versionName", "")), str(b.get("versionCode", "")),
-        str(b.get("commit", "")), str(b.get("output", "")),
-        " ".join(b.get("build", [])),
-    ]))
-print("CURRENT\t%s\t%s" % (meta.get("CurrentVersion", ""), meta.get("CurrentVersionCode", "")))
-PY
-)"; then
+# yq only converts YAML to JSON (-o=json is the mikefarah/yq v4 spelling); jq does the rest.
+if ! ENTRIES="$(yq -o=json '.' "$META" | jq -r '
+  ((.Builds // [])[] | [.versionName, .versionCode, .commit, .output, ((.build // []) | join(" "))]
+    | map(. // "" | tostring) | join("\t")),
+  (["CURRENT", .CurrentVersion, .CurrentVersionCode] | map(. // "" | tostring) | join("\t"))
+')"; then
   fail "could not parse $META"
 else
   LAST_NAME=""; LAST_CODE=""
@@ -104,8 +102,7 @@ else
     fi
     LAST_NAME="$NAME"; LAST_CODE="$CODE"
     printf '%s' "$NAME" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { fail "versionName '$NAME' is not major.minor.patch"; continue; }
-    IFS=. read -r MA MI PA <<< "$NAME"
-    WANT=$(( MA * 10000 + MI * 100 + PA ))
+    WANT="$(./tools/version-code.sh "$NAME" 2>/dev/null)" || { fail "versionName '$NAME' cannot be turned into a versionCode"; continue; }
     [ "$CODE" = "$WANT" ] && ok "$NAME -> versionCode $CODE" || fail "$NAME should be versionCode $WANT, not $CODE"
     [ "$COMMIT" = "v$NAME" ] && ok "$NAME -> commit v$NAME" || fail "$NAME has commit '$COMMIT', expected v$NAME"
     WANT_OUT="dist/little-videos-$NAME.apk"

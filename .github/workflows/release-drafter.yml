@@ -83,12 +83,11 @@ jobs:
               exit 1
               ;;
           esac
-          if ! printf '%s' "$RESOLVED_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::drafted version '$RESOLVED_VERSION' is not major.minor.patch"
+          # Also rejects a version that is not major.minor.patch.
+          if ! CODE="$(./tools/version-code.sh "$RESOLVED_VERSION")"; then
+            echo "::error::could not derive a versionCode from the drafted version '$RESOLVED_VERSION'"
             exit 1
           fi
-          IFS=. read -r MAJOR MINOR PATCH <<< "$RESOLVED_VERSION"
-          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
           echo "name=$RESOLVED_VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "drafted $TAG_NAME as versionCode $CODE"
@@ -122,7 +121,6 @@ jobs:
           done <<< "$ASSETS"
 
       - name: Update the F-Droid changelog
-        id: changelog
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -141,27 +139,11 @@ jobs:
           TARGET="$DIR/$VERSION_CODE.txt"
           RENDERED="$(printf '%s\n' "$BODY" | ./tools/fdroid-changelog.sh)"
 
-          # A draft with no merged PRs renders as a placeholder. Never let that
-          # overwrite a real changelog: the first release is assembled before
-          # any PR exists, so its notes are written by hand and would otherwise
-          # be replaced by "No changes" on the next push.
-          case "$RENDERED" in
-            "- No changes"|"no changes recorded")
-              if [ -s "$TARGET" ]; then
-                echo "drafted body has no changes; keeping the existing $TARGET"
-                echo "use_written=1" >> "$GITHUB_OUTPUT"
-                cat "$TARGET"
-              else
-                printf '%s\n' "$RENDERED" > "$TARGET"
-                echo "wrote placeholder $TARGET"
-              fi
-              ;;
-            *)
-              printf '%s\n' "$RENDERED" > "$TARGET"
-              echo "wrote $TARGET"
-              cat "$TARGET"
-              ;;
-          esac
+          # One-way: edits to the draft body are synced back by Release, and lost if
+          # another push to main lands first (the drafter regenerates the body).
+          printf '%s\n' "$RENDERED" > "$TARGET"
+          echo "wrote $TARGET"
+          cat "$TARGET"
 
           # Deliberately no cleanup of changelogs for versions that were
           # drafted but never published. F-Droid only reads the file matching
@@ -169,88 +151,21 @@ jobs:
           # first version of this deleted a hand-written changelog the moment
           # the drafted version moved.
 
-      # With no merged PRs the drafter renders "- No changes", and that is what
-      # ships as the release note. The written changelog is the real content in
-      # that case, so put it in the body too rather than leaving the two to
-      # disagree.
-      - name: Use the written changelog in the release body
-        if: steps.changelog.outputs.use_written == '1'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ steps.drafter.outputs.id }}
-          TAG: ${{ steps.drafter.outputs.tag_name }}
-          VERSION_CODE: ${{ steps.version.outputs.code }}
-        run: |
-          set -euo pipefail
-          FILE="fastlane/metadata/android/en-US/changelogs/$VERSION_CODE.txt"
-          if ! RELEASE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"; then
-            echo "::error::could not read release $RELEASE_ID"
-            exit 1
-          fi
-          TITLE="$(printf '%s' "$RELEASE" | jq -r '.name // ""')"
-          [ -n "$TITLE" ] || TITLE="$TAG"
-          BODY="$(printf '%s' "$RELEASE" | jq -r '.body // ""')"
-
-          # awk rather than python here: this is a YAML block scalar, and an
-          # indentation-sensitive language cannot be embedded in one.
-          NEW="$(printf '%s\n' "$BODY" | awk -v f="$FILE" '
-            BEGIN { while ((getline l < f) > 0) notes = notes l "\n" }
-            # GitHub returns release bodies with CRLF, so anchored patterns
-            # never match unless the carriage return is stripped first.
-            { sub(/\r$/, "") }
-            /^## What changed$/ { print; print ""; printf "%s", notes; skip = 1; next }
-            /^## / { if (skip) print ""; skip = 0 }
-            !skip { print }
-          ')"
-          if [ "$NEW" = "$BODY" ]; then
-            echo "release body already carries the written changelog"
-            exit 0
-          fi
-          # tag_name and name ride along or GitHub resets the tag.
-          gh api "repos/$REPO/releases/$RELEASE_ID" --method PATCH \
-            --raw-field "tag_name=$TAG" \
-            --raw-field "name=$TITLE" \
-            --raw-field "body=$NEW" \
-            --field "draft=true" --silent
-          echo "release body now matches $FILE"
-
+      # The script retries on a rejected push; stdout is the resulting HEAD.
       - name: Commit the changelog
         id: commit
+        env:
+          BRANCH: ${{ github.ref_name }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A fastlane/metadata
-          if git diff --cached --quiet; then
-            echo "changelog already up to date, nothing to commit"
-          else
-            git commit -m "Update F-Droid changelog for ${{ steps.version.outputs.name }}"
-            # Another merge can land while this job runs, which rejects the
-            # push. Rebase onto the new tip and try again rather than failing
-            # the release flow over a race.
-            BRANCH="${{ github.ref_name }}"
-            PUSHED=""
-            for ATTEMPT in 1 2 3; do
-              if git push origin "HEAD:$BRANCH"; then
-                PUSHED=yes
-                break
-              fi
-              echo "push rejected on attempt $ATTEMPT, rebasing onto origin/$BRANCH"
-              git fetch origin "$BRANCH"
-              if ! git rebase "origin/$BRANCH"; then
-                git rebase --abort || true
-                echo "::error::could not rebase the changelog commit onto origin/$BRANCH"
-                exit 1
-              fi
-            done
-            if [ -z "$PUSHED" ]; then
-              echo "::error::could not push the changelog commit after 3 attempts"
-              exit 1
-            fi
-            echo "pushed $(git rev-parse HEAD)"
+          if ! SHA="$(./tools/commit-and-push.sh "$BRANCH" \
+              "Update F-Droid changelog for $VERSION_NAME" fastlane/metadata)"; then
+            echo "::error::could not commit the changelog"
+            exit 1
           fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "changelog commit: $SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       # A workflow_run payload carries no job outputs, and its head_sha is the
       # commit that triggered this run, not the changelog commit made above.

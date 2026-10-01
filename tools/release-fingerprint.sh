@@ -13,12 +13,8 @@ KS="${2:-$HOME/keys/jesserockz.p12}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 [ -f "$KS" ] || { echo "no keystore at $KS" >&2; exit 1; }
-printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' ||
-  { echo "version must be major.minor.patch, got '$VERSION'" >&2; exit 1; }
-
-# Same derivation the release workflow uses.
-IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
-VC=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+# Also rejects a malformed version.
+VC="$("$ROOT/tools/version-code.sh" "$VERSION")" || exit 1
 
 read -rsp "Keystore password for $KS: " KSPASS; echo
 export KSPASS
@@ -38,6 +34,15 @@ echo "$ALIAS"
 echo
 echo "==> Building $VERSION ($VC)"
 cd "$ROOT"
+CI=true \
+ANDROID_KEYSTORE="$KS" \
+ANDROID_KEYSTORE_PASSWORD="$KSPASS" \
+ANDROID_KEY_ALIAS="$ALIAS" \
+VERSION_NAME="$VERSION" \
+VERSION_CODE="$VC" \
+./build.sh
+
+# The verify rebuild inherits these, so it must see the same values.
 CI=true \
 ANDROID_KEYSTORE="$KS" \
 ANDROID_KEYSTORE_PASSWORD="$KSPASS" \
