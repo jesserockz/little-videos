@@ -23,6 +23,10 @@ VERSION="${1:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+if ! VERSION_CODE="$(./tools/version-code.sh "$VERSION")"; then
+  exit 1
+fi
+
 UPSTREAM_ID=36528                 # fdroid/fdroiddata
 API=https://gitlab.com/api/v4
 
@@ -103,8 +107,7 @@ echo "committed metadata/$APP_ID.yml to $BRANCH"
 TITLE="$APP_ID: $VERSION"
 [ -n "$NEW_APP" ] && TITLE="New app: $APP_ID"
 DESC="$(printf '%s\n' \
-  "Adds \`$VERSION\` (versionCode $(python3 -c "
-ma, mi, pa = '$VERSION'.split('.'); print(int(ma)*10000 + int(mi)*100 + int(pa))")) for \`$APP_ID\`." \
+  "Adds \`$VERSION\` (versionCode $VERSION_CODE) for \`$APP_ID\`." \
   "" \
   "Reproducible build with the developer's signature: the release APK is attached to" \
   "https://github.com/jesserockz/little-videos/releases/tag/v$VERSION and" \

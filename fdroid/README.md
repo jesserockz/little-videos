@@ -119,9 +119,9 @@ version.
 | JDK                                                | Major version 17, verified, build fails otherwise  |
 | Android toolchain                                  | build-tools 35.0.0, platform 35                    |
 
-Verified by `tools/verify-reproducible.sh`, which builds twice under a
-different wall clock, timezone and locale and diffs the unsigned APKs. CI runs
-it on every build.
+Verified by `tools/verify-reproducible.sh`, which rebuilds an existing
+`./build.sh` result under a different wall clock, timezone and locale and diffs
+the unsigned and signed APKs. CI runs it on every build.
 
 The checkout path does not affect the output, which matters because F-Droid
 builds somewhere else entirely.

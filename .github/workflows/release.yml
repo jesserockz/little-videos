@@ -25,9 +25,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
+          # The target is usually behind main; the changelog sync needs its history.
+          fetch-depth: 0
 
-      - name: Publish
-        id: publish
+      # No side effects: any new changelog commit exists only in this checkout.
+      - name: Select and validate the draft
+        id: draft
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -95,24 +98,12 @@ jobs:
           fi
           echo "will tag $TAG at $TARGET"
 
-          # F-Droid reads the changelog out of the TAGGED checkout, not out of
-          # main, so it has to exist at the commit about to be tagged. The
-          # drafter commits it and the Build workflow pins the release to that
-          # commit; if it is missing here, that chain did not complete.
+          # Also rejects a tag that is not vMAJOR.MINOR.PATCH.
           VERSION="${TAG#v}"
-          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::tag '$TAG' is not vMAJOR.MINOR.PATCH"
+          if ! CODE="$(./tools/version-code.sh "$VERSION")"; then
+            echo "::error::could not derive a versionCode from tag '$TAG'"
             exit 1
           fi
-          IFS=. read -r MA MI PA <<< "$VERSION"
-          CODE=$(( MA * 10000 + MI * 100 + PA ))
-          CHANGELOG="fastlane/metadata/android/en-US/changelogs/$CODE.txt"
-          if ! gh api "repos/$REPO/contents/$CHANGELOG?ref=$TARGET" --jq '.sha' > /dev/null 2>&1; then
-            echo "::error::$CHANGELOG is missing at $TARGET."
-            echo "::error::Re-run Release Drafter, then Build, so the changelog is committed and the release is pinned to it."
-            exit 1
-          fi
-          echo "changelog present at $TARGET: $CHANGELOG"
 
           # The APK's own filename encodes the version, so a mismatch between
           # the tag and what was actually built shows up here rather than in
@@ -123,7 +114,170 @@ jobs:
             echo "::error::attached: $(printf '%s' "$SELECT" | jq -r '[.assets[].name] | join(", ")')"
             exit 1
           fi
-          echo "asset present: $EXPECTED"
+          ASSET_ID="$(printf '%s' "$SELECT" | jq -r --arg n "$EXPECTED" '.assets[] | select(.name == $n) | .id' | head -n1)"
+          if [ -z "$ASSET_ID" ]; then
+            echo "::error::could not read the id of asset $EXPECTED on release $TAG"
+            exit 1
+          fi
+          echo "asset present: $EXPECTED (id $ASSET_ID)"
+
+          # F-Droid reads the changelog from the tagged checkout; if the draft body was
+          # edited, this returns a fixed commit with the same committer date
+          # (see tools/release-changelog.sh).
+          if ! NEW_SHA="$(printf '%s\n' "$BODY" | ./tools/release-changelog.sh "$VERSION" "$TARGET")"; then
+            echo "::error::could not reconcile the changelog with the draft body"
+            exit 1
+          fi
+          if ! printf '%s' "$NEW_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::release-changelog.sh printed '$NEW_SHA' rather than a commit SHA"
+            exit 1
+          fi
+
+          if [ "$NEW_SHA" != "$TARGET" ]; then
+            echo "changelog rewritten from the edited draft; will tag $NEW_SHA instead of $TARGET"
+          else
+            echo "changelog at $TARGET already matches the draft body"
+          fi
+
+          {
+            echo "release_id=$RELEASE_ID"
+            echo "tag=$TAG"
+            echo "title=$TITLE"
+            echo "version=$VERSION"
+            echo "code=$CODE"
+            echo "target=$TARGET"
+            echo "tagged=$NEW_SHA"
+            echo "assets=$ASSETS"
+            echo "asset_id=$ASSET_ID"
+            echo "asset_name=$EXPECTED"
+            echo "changelog=fastlane/metadata/android/en-US/changelogs/$CODE.txt"
+          } >> "$GITHUB_OUTPUT"
+
+      # Separate worktree at the commit to tag, so SOURCE_DATE_EPOCH matches what
+      # F-Droid sees. Must exist before the build action, which builds inside it.
+      - name: Check out the commit to be tagged
+        env:
+          TAGGED: ${{ steps.draft.outputs.tagged }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/rebuild" "$TAGGED"
+
+      # Rebuild the tagged source and compare with the draft APK, as F-Droid will,
+      # before anything is pushed. Needs the release key to be byte-identical.
+      - name: Rebuild the tagged commit
+        id: rebuild
+        uses: ./.github/actions/android-build
+        with:
+          working-directory: ${{ runner.temp }}/rebuild
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          require-key: "true"
+          version-name: ${{ steps.draft.outputs.version }}
+          version-code: ${{ steps.draft.outputs.code }}
+
+      - name: Compare with the draft APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAGGED: ${{ steps.draft.outputs.tagged }}
+          TAG: ${{ steps.draft.outputs.tag }}
+          ASSET_ID: ${{ steps.draft.outputs.asset_id }}
+          ASSET_NAME: ${{ steps.draft.outputs.asset_name }}
+          REBUILT: ${{ steps.rebuild.outputs.apk }}
+          REBUILT_SUM: ${{ steps.rebuild.outputs.apk-sha256 }}
+          UNSIGNED_SUM: ${{ steps.rebuild.outputs.unsigned-sha256 }}
+        run: |
+          set -euo pipefail
+
+          # Draft assets have no public URL, so fetch by id via the API.
+          PUBLISHED="$RUNNER_TEMP/published.apk"
+          if ! gh api -H "Accept: application/octet-stream" \
+              "repos/$REPO/releases/assets/$ASSET_ID" > "$PUBLISHED"; then
+            echo "::error::could not download $ASSET_NAME from the draft"
+            exit 1
+          fi
+          if [ ! -s "$PUBLISHED" ]; then
+            echo "::error::the downloaded $ASSET_NAME is empty"
+            exit 1
+          fi
+
+          # The filename carries the version, so a different name means a different stamp.
+          if [ "$(basename "$REBUILT")" != "$ASSET_NAME" ]; then
+            echo "::error::the rebuild produced $(basename "$REBUILT"), expected $ASSET_NAME"
+            exit 1
+          fi
+
+          PUBLISHED_SUM="$(sha256sum "$PUBLISHED" | cut -d' ' -f1)"
+          if ! cmp -s "$PUBLISHED" "$REBUILT"; then
+            echo "::error::the rebuild of $TAGGED differs from the APK attached to $TAG."
+            echo "::error::Nothing was tagged or published."
+            echo "draft APK   sha256 $PUBLISHED_SUM"
+            echo "rebuilt APK sha256 $REBUILT_SUM"
+            echo "rebuilt unsigned sha256 $UNSIGNED_SUM"
+            echo "differing byte offsets (first 20):"
+            cmp -l "$PUBLISHED" "$REBUILT" 2>/dev/null | head -20 || true
+            {
+              echo "### Rebuild mismatch"
+              echo
+              echo "The rebuild of \`$TAGGED\` differs from the APK on \`$TAG\`. Nothing was tagged or published."
+              echo
+              echo "- Draft APK \`sha256\`: \`$PUBLISHED_SUM\`"
+              echo "- Rebuilt APK \`sha256\`: \`$REBUILT_SUM\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "rebuild of $TAGGED is byte-identical to $ASSET_NAME"
+          echo "sha256 $REBUILT_SUM"
+          {
+            echo "### Rebuild check passed"
+            echo
+            echo "Rebuilding \`$TAGGED\` gives exactly the APK attached to \`$TAG\`."
+            echo
+            echo "APK \`sha256\`: \`$REBUILT_SUM\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.draft.outputs.release_id }}
+          TAG: ${{ steps.draft.outputs.tag }}
+          TITLE: ${{ steps.draft.outputs.title }}
+          VERSION: ${{ steps.draft.outputs.version }}
+          CODE: ${{ steps.draft.outputs.code }}
+          TARGET: ${{ steps.draft.outputs.target }}
+          NEW_SHA: ${{ steps.draft.outputs.tagged }}
+          ASSETS: ${{ steps.draft.outputs.assets }}
+          CHANGELOG: ${{ steps.draft.outputs.changelog }}
+        run: |
+          set -euo pipefail
+
+          EXTRA=()
+          if [ "$NEW_SHA" != "$TARGET" ]; then
+            # Push the tag first: GitHub can't publish at a commit it doesn't have.
+            # The SHA is deterministic, so a retry finds the same tag.
+            if ! EXISTING="$(git ls-remote origin "refs/tags/$TAG")"; then
+              echo "::error::could not look up tag $TAG on origin"
+              exit 1
+            fi
+            EXISTING_SHA="$(printf '%s' "$EXISTING" | awk '{print $1}')"
+            if [ -z "$EXISTING_SHA" ]; then
+              if ! git push origin "$NEW_SHA:refs/tags/$TAG"; then
+                echo "::error::could not push tag $TAG at $NEW_SHA"
+                exit 1
+              fi
+            elif [ "$EXISTING_SHA" = "$NEW_SHA" ]; then
+              echo "tag $TAG already points at $NEW_SHA"
+            else
+              echo "::error::tag $TAG already exists at $EXISTING_SHA, not $NEW_SHA."
+              echo "::error::Refusing to move a tag; resolve it by hand."
+              exit 1
+            fi
+            EXTRA=(--raw-field "target_commitish=$NEW_SHA")
+          fi
 
           # Publish by id, and re-send tag_name and name: a PATCH to a draft
           # that omits them makes GitHub reset the tag to an untagged-<sha>
@@ -134,6 +288,7 @@ jobs:
               --method PATCH \
               --raw-field "tag_name=$TAG" \
               --raw-field "name=$TITLE" \
+              "${EXTRA[@]}" \
               --raw-field "make_latest=true" \
               --field "draft=false" \
               --silent; then
@@ -157,51 +312,88 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "tagged=$NEW_SHA" >> "$GITHUB_OUTPUT"
+          echo "changelog=$CHANGELOG" >> "$GITHUB_OUTPUT"
           {
             echo "### Published \`$TAG\`"
             echo
             echo "- Release id: \`$RELEASE_ID\`"
-            echo "- Tagged at: \`$TARGET\`"
+            if [ "$NEW_SHA" != "$TARGET" ]; then
+              echo "- Tagged at: \`$NEW_SHA\`"
+              echo "- Changelog rewritten from the edited draft; tagged at \`$NEW_SHA\` instead of \`$TARGET\`"
+            else
+              echo "- Tagged at: \`$TARGET\`"
+            fi
             echo "- Assets: $ASSETS"
             echo "- $URL"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Land the rewritten changelog on main (the tag is on a commit main lacks),
+      # before the metadata step, which builds on the updated tip.
+      - name: Sync the rewritten changelog to the default branch
+        env:
+          BRANCH: ${{ github.event.repository.default_branch }}
+          VERSION: ${{ steps.draft.outputs.version }}
+          TARGET: ${{ steps.draft.outputs.target }}
+          NEW_SHA: ${{ steps.draft.outputs.tagged }}
+          CHANGELOG: ${{ steps.draft.outputs.changelog }}
+        run: |
+          set -euo pipefail
+
+          if [ "$NEW_SHA" = "$TARGET" ]; then
+            echo "changelog was not rewritten, nothing to sync"
+            exit 0
+          fi
+
+          git fetch origin "$BRANCH"
+          TIP="$(git rev-parse "origin/$BRANCH")"
+
+          # Fast-forward main to the tagged commit; if rejected, fall through below.
+          if [ "$TIP" = "$TARGET" ]; then
+            if git push origin "$NEW_SHA:refs/heads/$BRANCH"; then
+              git checkout -B "$BRANCH" "$NEW_SHA"
+              echo "fast-forwarded $BRANCH to $NEW_SHA"
+              exit 0
+            fi
+            echo "fast-forward rejected, main moved; committing onto the new tip"
+            git fetch origin "$BRANCH"
+          fi
+
+          # Otherwise write the file on main's tip; normal dates are fine here.
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+          mkdir -p "$(dirname "$CHANGELOG")"
+          if ! git show "$NEW_SHA:$CHANGELOG" > "$CHANGELOG"; then
+            echo "::error::could not read $CHANGELOG at $NEW_SHA"
+            exit 1
+          fi
+          # No-op when the branch already has this content.
+          if ! ./tools/commit-and-push.sh "$BRANCH" \
+              "Update F-Droid changelog for $VERSION" "$CHANGELOG" > /dev/null; then
+            echo "::error::could not commit the rewritten changelog to $BRANCH"
+            exit 1
+          fi
 
       # The version is only final once published, so the Builds entry is added
       # here rather than while it is still a draft and the resolver could
       # still move it.
       - name: Record the release in the F-Droid metadata
         env:
-          VERSION: ${{ steps.publish.outputs.version }}
+          VERSION: ${{ steps.draft.outputs.version }}
           BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          ./tools/fdroid-add-build.py "$VERSION"
+          # Build on main's current tip, which the sync step may have advanced.
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+
+          ./tools/fdroid-add-build.sh "$VERSION"
           ./tools/check-metadata.sh
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add fdroid
-          if git diff --cached --quiet; then
-            echo "metadata already records $VERSION"
-            exit 0
-          fi
-          git commit -m "Record $VERSION in the F-Droid metadata"
-          PUSHED=""
-          for ATTEMPT in 1 2 3; do
-            if git push origin "HEAD:$BRANCH"; then
-              PUSHED=yes
-              break
-            fi
-            echo "push rejected on attempt $ATTEMPT, rebasing onto origin/$BRANCH"
-            git fetch origin "$BRANCH"
-            if ! git rebase "origin/$BRANCH"; then
-              git rebase --abort || true
-              echo "::error::could not rebase onto origin/$BRANCH"
-              exit 1
-            fi
-          done
-          if [ -z "$PUSHED" ]; then
-            echo "::error::could not push the metadata update after 3 attempts"
+          # No-op when the metadata already records this version.
+          if ! ./tools/commit-and-push.sh "$BRANCH" \
+              "Record $VERSION in the F-Droid metadata" fdroid > /dev/null; then
+            echo "::error::could not commit the metadata update to $BRANCH"
             exit 1
           fi
 
@@ -214,5 +406,5 @@ jobs:
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           FDROID_FORK: ${{ vars.FDROID_FORK }}
-          VERSION: ${{ steps.publish.outputs.version }}
+          VERSION: ${{ steps.draft.outputs.version }}
         run: ./tools/fdroid-open-mr.sh "$VERSION"

@@ -17,6 +17,6 @@ released as a patch bump with no changelog category. Pick one:
 ## Checklist
 
 - [ ] `./build.sh` passes, including the zero-permission assertion
-- [ ] `./tools/verify-reproducible.sh` passes, if the build changed
+- [ ] `./build.sh && ./tools/verify-reproducible.sh` passes, if the build changed
 - [ ] `./tools/check-metadata.sh` passes, if store metadata changed
 - [ ] No new `<uses-permission>` in the manifest, and no third-party code

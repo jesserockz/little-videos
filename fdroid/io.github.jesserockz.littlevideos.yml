@@ -71,7 +71,8 @@ MaintainerNotes: |-
   the build if any appear. That assertion is the point of the app.
 
   Reproducibility is checked on every CI run by tools/verify-reproducible.sh,
-  which builds twice under a different wall clock, timezone and locale.
+  which rebuilds under a different wall clock, timezone and locale and
+  compares against the first build.
 
 # Both off deliberately. F-Droid's checkupdates finds new versions by parsing
 # AndroidManifest.xml or build.gradle in tagged revisions for the highest
