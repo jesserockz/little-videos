@@ -1,1 +1,4 @@
-no changes recorded
+- Open the video player in landscape, then allow any rotation (#3)
+- Keep categorised changes in the F-Droid changelog (#5)
+- Use the written changelog in the release body (#2)
+- Make the draft release the one source of the F-Droid changelog (#4)
