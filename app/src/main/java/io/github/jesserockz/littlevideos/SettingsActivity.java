@@ -132,12 +132,31 @@ public class SettingsActivity extends Activity {
         // 9. Info: videos found
         rowCount = addRow(R.string.settings_count_title, null);
 
-        // 10. How to pin
+        // 10. Lock the app in place
+        Row rowLock = addRow(R.string.settings_lock_title, null);
+        setupSwitch(rowLock, prefs.getLockApp(),
+                R.string.settings_lock_on, R.string.settings_lock_off, on -> {
+                    prefs.setLockApp(on);
+                    if (on) {
+                        Ui.pin(this);
+                    } else {
+                        Ui.unpin(this);
+                    }
+                });
+
+        // 11. Exit, the only way out of the app short of the system unpin gesture
+        Row rowExit = addRow(R.string.settings_exit_title, v -> {
+            Ui.unpin(this);
+            finishAndRemoveTask();
+        });
+        rowExit.summary.setText(R.string.settings_exit_summary);
+
+        // 12. How pinning works
         Row rowPinning = addRow(R.string.settings_pinning_title, v -> showMessage(
                 R.string.pinning_dialog_title, getString(R.string.pinning_dialog_message)));
         rowPinning.summary.setText(R.string.settings_pinning_summary);
 
-        // 11. About
+        // 13. About
         Row rowAbout = addRow(R.string.settings_about_title, v -> showMessage(
                 R.string.about_dialog_title, getString(R.string.about_dialog_message, versionName())));
         rowAbout.summary.setText(R.string.settings_about_summary);

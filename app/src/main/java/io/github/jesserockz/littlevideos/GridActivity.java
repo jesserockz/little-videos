@@ -170,6 +170,9 @@ public class GridActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Ui.applyImmersive(this);
+        if (prefs.getLockApp()) {
+            Ui.pin(this);
+        }
         applyGridPrefs();
         resetGear();
 
@@ -300,6 +303,13 @@ public class GridActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
         scanGeneration++;
         super.onDestroy();
+    }
+
+    /** The grid is the bottom of the task, so back would leave the app. It does nothing instead. */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        // Deliberately empty.
     }
 
     @Override

@@ -55,8 +55,13 @@
     <string name="settings_count_title">Videos found</string>
     <string name="settings_count_none">Not scanned yet</string>
     <string name="settings_count_value">%1$d</string>
-    <string name="settings_pinning_title">How to pin this app</string>
-    <string name="settings_pinning_summary">Keep a child inside Little Videos</string>
+    <string name="settings_lock_title">Lock the app</string>
+    <string name="settings_lock_on">Little Videos pins itself. Home, recent apps and the notification shade are blocked</string>
+    <string name="settings_lock_off">Not pinned. A child can leave the app</string>
+    <string name="settings_exit_title">Exit Little Videos</string>
+    <string name="settings_exit_summary">Unpins and closes the app</string>
+    <string name="settings_pinning_title">About app pinning</string>
+    <string name="settings_pinning_summary">Make unpinning need your device PIN</string>
     <string name="settings_about_title">About</string>
     <string name="settings_about_summary">Version and privacy</string>
     <string name="settings_ok">OK</string>
@@ -85,8 +90,8 @@
     <string name="pin_mismatch">The PINs did not match. Please start again.</string>
     <string name="pin_saved">PIN changed</string>
 
-    <string name="pinning_dialog_title">How to pin this app</string>
-    <string name="pinning_dialog_message">1. Open the device Settings and find Security (on some devices it is under Security and privacy, or Lock screen).\n\n2. Turn on App pinning. Also turn on the option to ask for a PIN or lock pattern before unpinning.\n\n3. Open Little Videos, then go to the app switcher (the recent apps screen).\n\n4. Tap the app icon at the top of the Little Videos card and choose Pin.\n\nTo unpin, follow the on-screen gesture and enter your device PIN.</string>
+    <string name="pinning_dialog_title">About app pinning</string>
+    <string name="pinning_dialog_message">With Lock the app on, Little Videos asks Android to pin it each time the video grid opens. Tap Pin, or Got it, on the prompt. While pinned, the home and recent apps buttons and the notification shade do nothing, and back never leaves the grid.\n\nTo stop a child unpinning it, open the device Settings and find App pinning (under Security, Security and privacy, or Lock screen). Turn on the option to ask for a PIN or lock pattern before unpinning.\n\nTo leave the app, use Exit Little Videos here, or follow the on-screen unpin gesture and enter your device PIN.</string>
 
     <string name="about_dialog_title">About</string>
     <string name="about_dialog_message">Little Videos\nVersion %1$s\n\nThis app has no internet permission and never deletes or modifies files.</string>

@@ -25,6 +25,7 @@ public final class Prefs {
     private static final String K_SORT = "sort";
     private static final String K_GRID = "gridSize";
     private static final String K_DIRTY = "libraryDirty";
+    private static final String K_LOCK = "lockApp";
 
     private final SharedPreferences sp;
 
@@ -90,6 +91,15 @@ public final class Prefs {
 
     public void setGridSize(int v) {
         sp.edit().putInt(K_GRID, v).apply();
+    }
+
+    /** Whether the app asks Android to pin itself, which blocks home, recents and the notification shade. */
+    public boolean getLockApp() {
+        return sp.getBoolean(K_LOCK, true);
+    }
+
+    public void setLockApp(boolean v) {
+        sp.edit().putBoolean(K_LOCK, v).apply();
     }
 
     public boolean isLibraryDirty() {

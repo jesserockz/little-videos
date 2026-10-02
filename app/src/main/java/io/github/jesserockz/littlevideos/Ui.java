@@ -1,6 +1,7 @@
 package io.github.jesserockz.littlevideos;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.graphics.Insets;
 import android.os.Build;
@@ -38,6 +39,40 @@ final class Ui {
                             | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        }
+    }
+
+    /** True while the task is pinned, whether the app or the parent pinned it. */
+    static boolean isPinned(Activity a) {
+        ActivityManager am = (ActivityManager) a.getSystemService(Context.ACTIVITY_SERVICE);
+        return am != null && am.getLockTaskModeState() != ActivityManager.LOCK_TASK_MODE_NONE;
+    }
+
+    /**
+     * Asks Android to pin this task. Needs no permission: the system shows its own "Pin app?"
+     * confirmation, and once pinned, home, recents and the notification shade are all disabled
+     * until the device's unpin gesture (and device PIN, if that option is on) is used.
+     */
+    static void pin(Activity a) {
+        if (isPinned(a)) {
+            return;
+        }
+        try {
+            a.startLockTask();
+        } catch (RuntimeException ignored) {
+            // Not resumed, or the system refused. The next resume tries again.
+        }
+    }
+
+    /** Leaves pinning. Allowed because the app (or the user, on this app's task) started it. */
+    static void unpin(Activity a) {
+        if (!isPinned(a)) {
+            return;
+        }
+        try {
+            a.stopLockTask();
+        } catch (RuntimeException ignored) {
+            // Pinned by something we may not stop, such as a device policy.
         }
     }
 

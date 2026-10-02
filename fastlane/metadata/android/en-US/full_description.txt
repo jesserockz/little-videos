@@ -11,8 +11,11 @@ no ads, no in-app purchases, and no third-party code of any kind.
 The parent gate behind the gear icon needs a continuous two second press,
 deliberately longer than the platform long-press a toddler finds by accident.
 Behind it: the video folder, whether to include subfolders, what happens when a
-video ends, sort order, grid size, the PIN, and instructions for Android's
-screen pinning. Five wrong PIN entries lock the keypad for thirty seconds.
+video ends, sort order, grid size, the PIN, and a way to exit. Five wrong PIN
+entries lock the keypad for thirty seconds.
+
+The app pins itself with Android's screen pinning, so home, recent apps and
+the notification shade are blocked, and back never leaves the video grid.
 
 There is no seek bar in the player, only a thin non-interactive progress line,
 and cards have no long-press behaviour, so there is nothing to trigger by
