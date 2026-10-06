@@ -17,4 +17,6 @@
     <dimen name="row_padding_v">14dp</dimen>
     <dimen name="text_title">17sp</dimen>
     <dimen name="text_summary">14sp</dimen>
+    <dimen name="carousel_card_width">200dp</dimen>
+    <dimen name="carousel_spacing">12dp</dimen>
 </resources>
