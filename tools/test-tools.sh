@@ -144,7 +144,16 @@ ab_tree() { # name -> prints a throwaway tree holding just what the tools read
   mkdir -p "$T/tools" "$T/fdroid"
   cp build.sh "$T/"
   cp tools/fdroid-add-build.sh tools/check-metadata.sh tools/version-code.sh "$T/tools/"
-  cp "fdroid/$META_NAME" "$T/fdroid/"
+  # Pinned to the first release so the tests do not break each time a release
+  # appends a Builds entry: keep only the 1.0.0 entry and point Current* at it.
+  awk '
+    /^  - versionName: / { keep = ($3 == "1.0.0") }
+    /^[^ ]/ { keep = 1 }
+    /^$/ { keep = 1 }
+    keep
+  ' "fdroid/$META_NAME" |
+    sed 's/^CurrentVersion: .*/CurrentVersion: 1.0.0/; s/^CurrentVersionCode: .*/CurrentVersionCode: 10000/' \
+    > "$T/fdroid/$META_NAME"
   cp -r fastlane "$T/"
   echo "$T"
 }
