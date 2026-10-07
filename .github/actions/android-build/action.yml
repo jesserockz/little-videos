@@ -28,6 +28,10 @@ inputs:
     description: versionCode to stamp. Empty means the build.sh default.
     required: false
     default: ""
+  debug:
+    description: '"true" also builds the side-by-side debug APK.'
+    required: false
+    default: "false"
   working-directory:
     description: Existing checkout to build in.
     required: false
@@ -43,6 +47,9 @@ outputs:
   unsigned-sha256:
     description: sha256 of the unsigned APK, which is what must reproduce.
     value: ${{ steps.result.outputs.unsigned_sha256 }}
+  debug-apk:
+    description: Absolute path of the debug APK, empty unless debug is "true".
+    value: ${{ steps.debug.outputs.apk }}
 
 runs:
   using: composite
@@ -152,3 +159,31 @@ runs:
           echo
           echo "Any rebuild of this commit with the same toolchain must match."
         } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Build the debug APK
+      id: debug
+      if: inputs.debug == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ANDROID_KEYSTORE: ${{ steps.keystore.outputs.keystore }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        ANDROID_KEY_ALIAS: ${{ inputs.key-alias }}
+        ALLOW_GENERATED_KEY: ${{ steps.keystore.outputs.allow_generated_key }}
+        VERSION_NAME: ${{ inputs.version-name }}
+        VERSION_CODE: ${{ inputs.version-code }}
+        BUILD_VARIANT: debug
+      run: |
+        set -euo pipefail
+        ./build.sh
+        APKS=()
+        for F in dist/debug/*.apk; do
+          [ -f "$F" ] && APKS+=("$F")
+        done
+        if [ "${#APKS[@]}" -ne 1 ]; then
+          echo "::error::expected exactly one APK in dist/debug/, found ${#APKS[@]}"
+          exit 1
+        fi
+        APK="$(realpath "${APKS[0]}")"
+        echo "debug APK: $APK"
+        echo "apk=$APK" >> "$GITHUB_OUTPUT"
