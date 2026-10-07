@@ -142,4 +142,46 @@
             android:textSize="22sp"
             android:textStyle="bold"/>
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/carousel_layer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/carousel_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/scrim"
+            android:clickable="true"/>
+
+        <LinearLayout
+            android:id="@+id/carousel_panel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_sheet"
+            android:orientation="vertical"
+            android:paddingBottom="16dp"
+            android:paddingTop="16dp">
+
+            <HorizontalScrollView
+                android:id="@+id/carousel_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/carousel_row"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"/>
+            </HorizontalScrollView>
+        </LinearLayout>
+    </FrameLayout>
 </FrameLayout>
