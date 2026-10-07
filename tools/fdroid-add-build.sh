@@ -6,9 +6,9 @@
 # Edited as text, not round-tripped through a YAML parser: a parser would drop
 # every comment, and the comments record why AutoUpdateMode is off and why
 # Description lives in the app repo. The new entry is a copy of the last one
-# with only the version-bearing fields substituted, so the toolchain in `sudo:`
-# and the shape of `build:` carry forward. Idempotent: a version already
-# present is left alone.
+# with only versionName, versionCode and commit substituted, so `sudo:`,
+# `output:` and `build:` (which use F-Droid's $$VERSION$$/$$VERCODE$$) carry
+# forward unchanged. Idempotent: a version already present is left alone.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,7 +70,7 @@ if [ "$CODE" -le "$PREV_CODE" ]; then
 fi
 
 # Substitute only the version-bearing fields, first matching rule per line. A
-# blanket replace would also rewrite "major*10000" in the build comment.
+# blanket replace would also rewrite "major*10000" in a comment.
 OUT="$(awk -v s="$START" -v e="$END" -v old="$PREV" -v oc="$PREV_CODE" \
   -v new="$VERSION" -v nc="$CODE" '
   function tail(line, suffix) { # line minus trailing space and the suffix
@@ -83,9 +83,6 @@ OUT="$(awk -v s="$START" -v e="$END" -v old="$PREV" -v oc="$PREV_CODE" \
     if (line ~ ("^[ \t]*- versionName:[ \t]*" o "[ \t]*$")) return tail(line, old) new
     if (line ~ ("^[ \t]*versionCode:[ \t]*" c "[ \t]*$")) return tail(line, oc) nc
     if (line ~ ("^[ \t]*commit:[ \t]*v?" o "[ \t]*$")) return tail(line, old) new
-    if (line ~ ("^[ \t]*output:[ \t]*[^ \t]*" o "\\.apk[ \t]*$")) return tail(line, old ".apk") new ".apk"
-    if (line ~ ("^[ \t]*- export VERSION_NAME=" o "[ \t]*$")) return tail(line, old) new
-    if (line ~ ("^[ \t]*- export VERSION_CODE=" c "[ \t]*$")) return tail(line, oc) nc
     return line
   }
   { L[NR] = $0 }

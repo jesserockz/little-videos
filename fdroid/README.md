@@ -81,26 +81,26 @@ passes it to `aapt2` from the release tag. So `AutoUpdateMode` and
 `UpdateCheckMode` are `None` and `Static`, and entries are written by hand.
 
 Each entry is a complete recipe for one version. Copy the previous one and
-change four things:
+change three things:
 
 ```yaml
   - versionName: 1.1.0        # must match the release tag, minus the v
     versionCode: 10100        # major*10000 + minor*100 + patch
     commit: v1.1.0            # the tag to check out
-    output: dist/little-videos-1.1.0.apk
+    output: dist/little-videos-$$VERSION$$.apk
     sudo: [...]               # unchanged
     build:
-      - export ANDROID_HOME=$$SDK$$
-      - export VERSION_NAME=1.1.0
-      - export VERSION_CODE=10100
+      - export VERSION_NAME=$$VERSION$$ VERSION_CODE=$$VERCODE$$
       - ./build.sh
 ```
 
+F-Droid replaces `$$VERSION$$` and `$$VERCODE$$` with the entry's
+`versionName` and `versionCode`, so `output:` and `build:` never change.
 `output` is where F-Droid looks for the APK after `build:` finishes, and it has
 to match what `build.sh` actually wrote, which is
 `dist/little-videos-$VERSION_NAME.apk`. The `sudo:` block installs the toolchain
-the buildserver does not ship by default. `$$SDK$$` is F-Droid's substitution
-for the SDK path on the buildserver.
+the buildserver does not ship by default. `ANDROID_HOME` is already set to the
+SDK path on the buildserver, so `build.sh` finds it without an export.
 
 The list only ever grows: old entries stay so F-Droid can rebuild any published
 version.

@@ -139,21 +139,29 @@ echo "fdroid-add-build.sh"
 
 APP="$(sed -n 's/^APP_ID="\(.*\)"$/\1/p' build.sh)"
 META_NAME="$APP.yml"
+
+# The live metadata gains an entry every release, so the tests run against a
+# copy pinned to one entry: the newest, renamed to 1.0.0 (10000).
+FIXTURE="$TMP_ROOT/fixture.yml"
+LAST_ENTRY="$(awk '/^Builds:/ {b=1; next} b && /^  - versionName:/ {e=""} b && !/^  / {exit} b {e = e $0 "\n"} END {printf "%s", e}' "fdroid/$META_NAME")"
+LAST_NAME="$(printf '%s' "$LAST_ENTRY" | sed -n 's/^  - versionName: //p')"
+LAST_CODE="$(printf '%s' "$LAST_ENTRY" | sed -n 's/^    versionCode: //p')"
+LAST_ENTRY="$(printf '%s' "$LAST_ENTRY" | sed "s/${LAST_NAME//./\\.}/1.0.0/g; s/\b$LAST_CODE\b/10000/g")"
+awk -v entry="$LAST_ENTRY" '
+  /^Builds:/ {print; print entry; b=1; next}
+  b && /^  / {next}
+  {b=0}
+  /^CurrentVersion:/ {print "CurrentVersion: 1.0.0"; next}
+  /^CurrentVersionCode:/ {print "CurrentVersionCode: 10000"; next}
+  {print}
+' "fdroid/$META_NAME" > "$FIXTURE"
+
 ab_tree() { # name -> prints a throwaway tree holding just what the tools read
   local T="$TMP_ROOT/ab-$1"
   mkdir -p "$T/tools" "$T/fdroid"
   cp build.sh "$T/"
   cp tools/fdroid-add-build.sh tools/check-metadata.sh tools/version-code.sh "$T/tools/"
-  # Pinned to the first release so the tests do not break each time a release
-  # appends a Builds entry: keep only the 1.0.0 entry and point Current* at it.
-  awk '
-    /^  - versionName: / { keep = ($3 == "1.0.0") }
-    /^[^ ]/ { keep = 1 }
-    /^$/ { keep = 1 }
-    keep
-  ' "fdroid/$META_NAME" |
-    sed 's/^CurrentVersion: .*/CurrentVersion: 1.0.0/; s/^CurrentVersionCode: .*/CurrentVersionCode: 10000/' \
-    > "$T/fdroid/$META_NAME"
+  cp "$FIXTURE" "$T/fdroid/$META_NAME"
   cp -r fastlane "$T/"
   echo "$T"
 }
@@ -161,6 +169,8 @@ ab() { (cd "$AB" && ./tools/fdroid-add-build.sh "$@" 2>&1); }
 
 AB="$(ab_tree main)"
 META="$AB/fdroid/$META_NAME"
+# A comment inside the entry, which a blanket replace of 10000 would rewrite.
+sed -i 's/^    build:$/&\n      # VERSION_CODE is major*10000 + minor*100 + patch./' "$META"
 cp "$META" "$AB/orig.yml"
 
 OUT="$(ab 1.1.0)"
@@ -170,15 +180,12 @@ N="$(grep -c '^  - versionName: 1.1.0$' "$META")"
 check "writes exactly one entry" "1" "$N"
 check "derives the versionCode" "    versionCode: 10100" "$(grep '^    versionCode: 10100$' "$META")"
 check "derives the commit tag" "    commit: v1.1.0" "$(grep '^    commit: v1.1.0$' "$META")"
-check "derives the output path" "    output: dist/little-videos-1.1.0.apk" "$(grep '^    output: dist/little-videos-1.1.0.apk$' "$META")"
-check "stamps VERSION_NAME" "      - export VERSION_NAME=1.1.0" "$(grep '^      - export VERSION_NAME=1.1.0$' "$META")"
-check "stamps VERSION_CODE" "      - export VERSION_CODE=10100" "$(grep '^      - export VERSION_CODE=10100$' "$META")"
+check "carries output forward" "2" "$(grep -c '^    output: dist/little-videos-\$\$VERSION\$\$\.apk$' "$META")"
+check "carries the build commands forward" "2" "$(grep -c '^      - export VERSION_NAME=\$\$VERSION\$\$ VERSION_CODE=\$\$VERCODE\$\$$' "$META")"
 check "bumps CurrentVersion" "CurrentVersion: 1.1.0" "$(grep '^CurrentVersion:' "$META")"
 check "bumps CurrentVersionCode" "CurrentVersionCode: 10100" "$(grep '^CurrentVersionCode:' "$META")"
 
-# The build block explains the versionCode formula in prose. A blanket
-# search and replace rewrites the multiplier in that comment.
-K="$(grep -c 'major\*10000 + minor\*100 + patch' "$META")"
+K="$(grep -c '^      # VERSION_CODE is major\*10000 + minor\*100 + patch\.$' "$META")"
 check "leaves the formula comment alone" "2" "$K"
 check "carries the toolchain forward" "2" "$(grep -c 'openjdk-17-jdk-headless' "$META")"
 
@@ -190,7 +197,7 @@ sed -n '/^  - versionName: 1.1.0$/,/^      - .\/build.sh$/p' "$META" | sed 's/1\
 sed -n '/^  - versionName: 1.0.0$/,/^      - .\/build.sh$/p' "$AB/orig.yml" > "$AB/old-entry.txt"
 check "new entry is the old one with only the version fields changed" "$(cat "$AB/old-entry.txt")" "$(cat "$AB/new-entry.txt")"
 check "inserts right after the last entry" "$(printf '      - ./build.sh\n  - versionName: 1.1.0')" "$(grep -B1 '^  - versionName: 1.1.0$' "$META")"
-check "keeps the blank line after the entries" "[]" "$(awk '/^      - export VERSION_CODE=10100$/ {f=1} f && /^      - \.\/build\.sh$/ {getline n; print "[" n "]"; exit}' "$META")"
+check "keeps the blank line after the entries" "[]" "$(awk '/^  - versionName: 1\.1\.0$/ {f=1} f && /^      - \.\/build\.sh$/ {getline n; print "[" n "]"; exit}' "$META")"
 
 cp "$META" "$AB/after110.yml"
 OUT="$(ab 1.1.0)"
@@ -218,13 +225,13 @@ check "usage is printed" "usage: ./tools/fdroid-add-build.sh <MAJOR.MINOR.PATCH>
 OUT="$(ab 1.2.0)"
 check "adds a later version" "added 1.2.0 (10200) to $META_NAME" "$OUT"
 check "orders entries oldest to newest" "$(printf '1.0.0\n1.1.0\n1.2.0')" "$(sed -n 's/^  - versionName: //p' "$META")"
-check "later version copies from the newest entry" "      - export VERSION_CODE=10200" "$(grep '^      - export VERSION_CODE=10200$' "$META")"
+check "later version copies from the newest entry" "3" "$(grep -c '^      - export VERSION_NAME=\$\$VERSION\$\$ VERSION_CODE=\$\$VERCODE\$\$$' "$META")"
 check "later version bumps CurrentVersionCode" "CurrentVersionCode: 10200" "$(grep '^CurrentVersionCode:' "$META")"
 
 # An entry that runs to the end of the file, with no Current* lines at all.
 AB="$(ab_tree eof)"
 META="$AB/fdroid/$META_NAME"
-sed -n '/^Builds:/,/^      - .\/build.sh$/p' "fdroid/$META_NAME" > "$META"
+sed -n '/^Builds:/,/^      - .\/build.sh$/p' "$FIXTURE" > "$META"
 OUT="$(ab 1.0.1)"
 check "handles an entry at the end of the file" "added 1.0.1 (10001) to $META_NAME" "$OUT"
 check "appends it at the end" "  - versionName: 1.0.1" "$(grep '^  - versionName: 1.0.1$' "$META")"
@@ -270,6 +277,23 @@ OUT="$(cm)"
 check "a wrong versionCode fails" "yes" "$(printf '%s\n' "$OUT" | grep -q 'FAIL: 1.0.0 should be versionCode 10000, not 99999' && echo yes || echo no)"
 check "a failure ends with the problems line" "metadata problems found" "$(printf '%s\n' "$OUT" | tail -1)"
 (cd "$AB" && ./tools/check-metadata.sh > /dev/null 2>&1); check "a failure exits 1" "1" "$?"
+
+# Literal values are what fdroidserver would substitute, so they still pass.
+AB="$(ab_tree cmliteral)"
+sed -i 's/\$\$VERSION\$\$/1.0.0/g; s/\$\$VERCODE\$\$/10000/g' "$AB/fdroid/$META_NAME"
+OUT="$(cm)"
+check "literal versions in output and build pass" "metadata is consistent" "$(printf '%s\n' "$OUT" | tail -1)"
+
+AB="$(ab_tree cmoutput)"
+sed -i 's/^    output: .*/    output: dist\/little-videos-$$VERCODE$$.apk/' "$AB/fdroid/$META_NAME"
+OUT="$(cm)"
+check "a wrong output fails" "yes" "$(printf '%s\n' "$OUT" | grep -q "FAIL: 1.0.0 has output 'dist/little-videos-10000.apk', build.sh writes dist/little-videos-1.0.0.apk" && echo yes || echo no)"
+
+AB="$(ab_tree cmstamp)"
+sed -i 's/VERSION_NAME=\$\$VERSION\$\$ VERSION_CODE=\$\$VERCODE\$\$/VERSION_NAME=0.0.1 VERSION_CODE=1/' "$AB/fdroid/$META_NAME"
+OUT="$(cm)"
+check "a wrong VERSION_NAME fails" "yes" "$(printf '%s\n' "$OUT" | grep -q "FAIL: 1.0.0 does not export VERSION_NAME=1.0.0" && echo yes || echo no)"
+check "a wrong VERSION_CODE fails" "yes" "$(printf '%s\n' "$OUT" | grep -q "FAIL: 1.0.0 does not export VERSION_CODE=10000" && echo yes || echo no)"
 
 AB="$(ab_tree cmcurrent)"
 sed -i 's/^CurrentVersion: 1.0.0$/CurrentVersion: 0.9.0/; s/^CurrentVersionCode: 10000$/CurrentVersionCode: 900/' "$AB/fdroid/$META_NAME"
