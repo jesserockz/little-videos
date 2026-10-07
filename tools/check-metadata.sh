@@ -101,6 +101,9 @@ else
       continue
     fi
     LAST_NAME="$NAME"; LAST_CODE="$CODE"
+    # fdroidserver substitutes these before running or reading them.
+    OUTPUT="${OUTPUT//\$\$VERSION\$\$/$NAME}"; OUTPUT="${OUTPUT//\$\$VERCODE\$\$/$CODE}"
+    BUILD="${BUILD//\$\$VERSION\$\$/$NAME}"; BUILD="${BUILD//\$\$VERCODE\$\$/$CODE}"
     printf '%s' "$NAME" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { fail "versionName '$NAME' is not major.minor.patch"; continue; }
     WANT="$(./tools/version-code.sh "$NAME" 2>/dev/null)" || { fail "versionName '$NAME' cannot be turned into a versionCode"; continue; }
     [ "$CODE" = "$WANT" ] && ok "$NAME -> versionCode $CODE" || fail "$NAME should be versionCode $WANT, not $CODE"
