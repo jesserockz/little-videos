@@ -1,0 +1,2 @@
+- Swipe up in the player to pick another video (#8)
+- Use F-Droid build variables so Builds entries stop growing (#9)
