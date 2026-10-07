@@ -41,42 +41,30 @@ Binaries: https://github.com/jesserockz/little-videos/releases/download/v%v/litt
 #     | awk '/Signer #1 certificate SHA-256/ {print $NF}'
 AllowedAPKSigningKeys: ce8a11d289bdf6f53d54428ed486f0d4a0574fd82ba271a5028e48dd6d5fc467
 
+# One entry per release, appended by tools/fdroid-add-build.sh. build.sh pins
+# everything that decides the output hash (TZ, LC_ALL, SOURCE_DATE_EPOCH, JDK 17)
+# and VERSION_CODE is major*10000 + minor*100 + patch, as in the release workflow.
+# F-Droid fills in $$VERSION$$ and $$VERCODE$$ from each entry's fields.
 Builds:
   - versionName: 1.0.0
     versionCode: 10000
     commit: v1.0.0
-    output: dist/little-videos-1.0.0.apk
+    output: dist/little-videos-$$VERSION$$.apk
     sudo:
       - apt-get update
       - apt-get install -y openjdk-17-jdk-headless zip unzip binutils
     build:
-      # build.sh pins everything that decides the output hash: TZ=UTC, LC_ALL=C,
-      # SOURCE_DATE_EPOCH from the commit date, and JDK 17. It refuses to run on
-      # a different JDK major version rather than emit a differing APK.
-      #
-      # VERSION_CODE is derived from the tag as major*10000 + minor*100 + patch,
-      # which is what the GitHub release workflow does.
-      - export ANDROID_HOME=$$SDK$$
-      - export VERSION_NAME=1.0.0
-      - export VERSION_CODE=10000
+      - export VERSION_NAME=$$VERSION$$ VERSION_CODE=$$VERCODE$$
       - ./build.sh
   - versionName: 1.1.0
     versionCode: 10100
     commit: v1.1.0
-    output: dist/little-videos-1.1.0.apk
+    output: dist/little-videos-$$VERSION$$.apk
     sudo:
       - apt-get update
       - apt-get install -y openjdk-17-jdk-headless zip unzip binutils
     build:
-      # build.sh pins everything that decides the output hash: TZ=UTC, LC_ALL=C,
-      # SOURCE_DATE_EPOCH from the commit date, and JDK 17. It refuses to run on
-      # a different JDK major version rather than emit a differing APK.
-      #
-      # VERSION_CODE is derived from the tag as major*10000 + minor*100 + patch,
-      # which is what the GitHub release workflow does.
-      - export ANDROID_HOME=$$SDK$$
-      - export VERSION_NAME=1.1.0
-      - export VERSION_CODE=10100
+      - export VERSION_NAME=$$VERSION$$ VERSION_CODE=$$VERCODE$$
       - ./build.sh
 
 MaintainerNotes: |-
