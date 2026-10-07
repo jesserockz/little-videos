@@ -92,12 +92,23 @@ jobs:
           require-key: ${{ github.event_name == 'workflow_run' }}
           version-name: ${{ steps.target.outputs.name }}
           version-code: ${{ steps.target.outputs.code }}
+          debug: ${{ github.event_name == 'pull_request' }}
 
       - name: Upload the APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: little-videos-apk
           path: ${{ steps.build.outputs.apk }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # Not zipped, so it downloads as an installable .apk.
+      - name: Upload the debug APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          path: ${{ steps.build.outputs.debug-apk }}
+          archive: false
           if-no-files-found: error
           retention-days: 14
 

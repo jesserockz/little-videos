@@ -95,4 +95,5 @@
 
     <string name="about_dialog_title">About</string>
     <string name="about_dialog_message">Little Videos\nVersion %1$s\n\nThis app has no internet permission and never deletes or modifies files.</string>
+    <string name="player_carousel_current">Playing now</string>
 </resources>

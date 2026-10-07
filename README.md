@@ -102,6 +102,13 @@ and reports crashes. `tools/shot.sh <name>` grabs a screenshot.
 `tools/release-fingerprint.sh <version> [keystore]` builds a signed release APK with the
 real key and prints the signing certificate fingerprint F-Droid needs.
 
+### Debug build
+
+`BUILD_VARIANT=debug ./build.sh` writes `dist/debug/little-videos-<version>-debug.apk`
+with the package `io.github.jesserockz.littlevideos.debug`, so it installs alongside the
+real app. It is debuggable and labelled "Little Videos Debug". Pull request builds upload
+it as an artifact.
+
 ### Build-time overrides
 
 `build.sh` takes its signing material and version from the environment, so the same

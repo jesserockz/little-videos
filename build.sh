@@ -11,6 +11,10 @@ MIN_SDK="24"
 TARGET_SDK="35"
 APP_ID="io.github.jesserockz.littlevideos"
 
+# "debug" builds a debuggable copy with its own applicationId, so it installs
+# beside the real app. It writes only under build/debug and dist/debug.
+BUILD_VARIANT="${BUILD_VARIANT:-release}"
+
 # Overridable by the environment so a release build can stamp the version from
 # the release tag. The defaults are what a plain local build gets.
 VERSION_CODE="${VERSION_CODE:-1}"
@@ -36,21 +40,32 @@ if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
 fi
 export SOURCE_DATE_EPOCH
 
+die() { echo "error: $*" >&2; exit 1; }
+step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+
 BT="$SDK/build-tools/$BUILD_TOOLS_VERSION"
 ANDROID_JAR="$SDK/platforms/android-$COMPILE_SDK/android.jar"
 SRC="$ROOT/app/src/main"
 OUT="$ROOT/build"
 DIST="$ROOT/dist"
+APK_SUFFIX=""
+case "$BUILD_VARIANT" in
+  release) ;;
+  debug)
+    APP_ID="$APP_ID.debug"
+    OUT="$ROOT/build/debug"
+    DIST="$ROOT/dist/debug"
+    APK_SUFFIX="-debug"
+    ;;
+  *) die "BUILD_VARIANT must be release or debug, not '$BUILD_VARIANT'" ;;
+esac
 
 # Signing material. In CI these come from secrets; locally they fall back to the
 # throwaway sideload key that build.sh generates on first run.
 KS="${ANDROID_KEYSTORE:-$ROOT/keystore/little-videos.jks}"
 KS_PASS="${ANDROID_KEYSTORE_PASSWORD:-littlevideos}"
 KS_ALIAS="${ANDROID_KEY_ALIAS:-littlevideos}"
-APK="$DIST/little-videos-$VERSION_NAME.apk"
-
-die() { echo "error: $*" >&2; exit 1; }
-step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+APK="$DIST/little-videos-$VERSION_NAME$APK_SUFFIX.apk"
 
 # The JDK major version is a reproducibility input, not a detail: javac 17 and
 # javac 21 emit different bytecode for these same sources, so the APK hash
@@ -130,12 +145,27 @@ fi
 step "Compiling resources (aapt2 compile)"
 "$BT/aapt2" compile --dir "$SRC/res" -o "$OUT/res/resources.zip"
 
+# Debug: relabel the launcher icon. The overlay is linked last so it wins.
+LINK_EXTRA=()
+if [ "$BUILD_VARIANT" = debug ]; then
+  mkdir -p "$OUT/overlay/values"
+  cat > "$OUT/overlay/values/strings.xml" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Little Videos Debug</string>
+</resources>
+XML
+  "$BT/aapt2" compile --dir "$OUT/overlay" -o "$OUT/res/overlay.zip"
+  LINK_EXTRA=(-R "$OUT/res/overlay.zip" --rename-manifest-package "$APP_ID" --debug-mode)
+fi
+
 step "Linking resources (aapt2 link)"
 "$BT/aapt2" link \
   -o "$OUT/base.apk" \
   -I "$ANDROID_JAR" \
   --manifest "$SRC/AndroidManifest.xml" \
   -R "$OUT/res/resources.zip" \
+  ${LINK_EXTRA[@]+"${LINK_EXTRA[@]}"} \
   --java "$OUT/gen" \
   --min-sdk-version "$MIN_SDK" \
   --target-sdk-version "$TARGET_SDK" \
