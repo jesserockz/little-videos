@@ -20,3 +20,4 @@ released as a patch bump with no changelog category. Pick one:
 - [ ] `./build.sh && ./tools/verify-reproducible.sh` passes, if the build changed
 - [ ] `./tools/check-metadata.sh` passes, if store metadata changed
 - [ ] No new `<uses-permission>` in the manifest, and no third-party code
+- [ ] Screenshots and a screen recording attached, if the UI changed
