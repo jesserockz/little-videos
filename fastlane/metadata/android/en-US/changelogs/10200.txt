@@ -1,3 +1,4 @@
+- Add automatic app pinning with manual lock toggle (#7)
 - Swipe up in the player to pick another video (#8)
 - Upload a side-by-side debug APK on pull requests (#10)
 - Use F-Droid build variables so Builds entries stop growing (#9)
