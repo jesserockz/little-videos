@@ -46,19 +46,33 @@ adult can see it registering. Sliding a finger off it cancels.
 
 Behind the gate: folder, include subfolders, show titles, what happens when a video ends
 (back to the grid / play next / repeat), sort order, grid size, change PIN, rebuild
-thumbnails, and the screen pinning instructions.
+thumbnails, lock the app, exit, and the screen pinning instructions.
 
 Five wrong PIN entries locks the keypad for 30 seconds.
 
-## Screen pinning
+## Locking the child in
 
-The app is designed to be left in Android's screen pinning.
+A normal app cannot block the home button, the recent apps screen or the
+notification shade, and it cannot get a permission that would let it. Android's
+screen pinning can, so the app uses that instead:
 
-Settings > Security and privacy > More security settings > App pinning. Turn it on, and
-**also turn on "Ask for PIN before unpinning"**. Without that second toggle, holding back
-and overview together unpins the app, which toddlers find by accident surprisingly fast.
+- **Back** never leaves the app. On the grid it does nothing.
+- **Lock the app** (on by default) makes Little Videos ask Android to pin it every time
+  the grid opens. Android shows its own "Pin app?" prompt, so tap Pin. This calls
+  `startLockTask()`, which needs no permission. While pinned, home, recents and the
+  notification shade are all disabled.
+- **Exit Little Videos**, behind the parent gate, unpins and closes the app.
 
-Then open Little Videos, go to the app switcher, and pin it.
+Pinning on its own can still be undone by holding back and overview together (or the
+gesture navigation equivalent), which toddlers find by accident surprisingly fast. So in
+the device's Settings > Security and privacy > More security settings > App pinning,
+**turn on "Ask for PIN before unpinning"**. With it on, unpinning, including through
+Exit, goes to the lock screen.
+
+If the prompt is dismissed, the app asks again the next time the grid opens. Once you
+have unpinned it, through Exit or the system gesture, it does not ask again until you
+leave the app with home or recents and come back. Turn
+**Lock the app** off if you would rather pin by hand from the app switcher.
 
 Verified on Android 13: the folder picker still opens while the app is pinned, so you do
 not need to unpin to change the video folder.

@@ -2,6 +2,13 @@
 
 
 
+## Screenshots
+
+Required for any new or changed user-facing feature. Show each screen the
+change adds or alters.
+
+
+
 ## Label
 
 The release version comes from labels on merged PRs, so an unlabelled PR is
