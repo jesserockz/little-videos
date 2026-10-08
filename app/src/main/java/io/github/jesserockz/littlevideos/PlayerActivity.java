@@ -1,6 +1,5 @@
 package io.github.jesserockz.littlevideos;
 
-import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.media.MediaPlayer;
 import android.os.Bundle;
@@ -23,7 +22,7 @@ import android.widget.VideoView;
 import java.util.List;
 
 /** Fullscreen player with tap-to-reveal controls and no seeking. */
-public class PlayerActivity extends Activity {
+public class PlayerActivity extends AppActivity {
     public static final String EXTRA_INDEX = "index";
 
     private static final long HIDE_DELAY_MS = 3500;

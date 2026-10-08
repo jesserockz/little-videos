@@ -42,10 +42,51 @@ final class Ui {
         }
     }
 
+    /** The task has been seen pinned since the last unpin, so finding it unpinned means someone unpinned it. */
+    private static boolean sawPinned = false;
+    /** Someone unpinned the app, so it does not ask to pin again until they leave the app and come back. */
+    private static boolean pinSuppressed = false;
+    /** Exit unpinned the app; whatever is left of the task closes once it is back in front. */
+    static boolean exitRequested = false;
+
     /** True while the task is pinned, whether the app or the parent pinned it. */
     static boolean isPinned(Activity a) {
         ActivityManager am = (ActivityManager) a.getSystemService(Context.ACTIVITY_SERVICE);
-        return am != null && am.getLockTaskModeState() != ActivityManager.LOCK_TASK_MODE_NONE;
+        boolean pinned = am != null && am.getLockTaskModeState() != ActivityManager.LOCK_TASK_MODE_NONE;
+        if (pinned) {
+            sawPinned = true;
+        }
+        return pinned;
+    }
+
+    /**
+     * Pins the task unless someone has unpinned it during this visit. Unpinning with the device
+     * PIN goes through the lock screen, which pauses the app, so without this the grid would ask
+     * to pin again the moment the parent unlocks.
+     */
+    static void pinUnlessUnpinned(Activity a) {
+        if (isPinned(a)) {
+            return;
+        }
+        if (sawPinned) {
+            sawPinned = false;
+            pinSuppressed = true;
+        }
+        if (!pinSuppressed) {
+            pin(a);
+        }
+    }
+
+    /** The user left the app (home or recents), so the next visit pins again. */
+    static void allowPinAgain() {
+        pinSuppressed = false;
+    }
+
+    /** A fresh launch: nothing from an earlier visit in this process applies any more. */
+    static void resetPinState() {
+        sawPinned = false;
+        pinSuppressed = false;
+        exitRequested = false;
     }
 
     /**
@@ -64,11 +105,16 @@ final class Ui {
         }
     }
 
-    /** Leaves pinning. Allowed because the app (or the user, on this app's task) started it. */
+    /**
+     * Leaves pinning. Allowed because the app (or the user, on this app's task) started it.
+     * Like the system unpin gesture, it stops the app asking to pin again during this visit.
+     */
     static void unpin(Activity a) {
         if (!isPinned(a)) {
             return;
         }
+        sawPinned = false;
+        pinSuppressed = true;
         try {
             a.stopLockTask();
         } catch (RuntimeException ignored) {

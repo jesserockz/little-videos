@@ -1,6 +1,5 @@
 package io.github.jesserockz.littlevideos;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
@@ -18,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Parent gate: a 4-digit keypad in front of the settings. */
-public class PinActivity extends Activity {
+public class PinActivity extends AppActivity {
     private static final int PIN_LENGTH = 4;
     private static final int MAX_FAILURES = 5;
     private static final long LOCKOUT_MS = 30000;

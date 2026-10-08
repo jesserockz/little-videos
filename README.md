@@ -69,7 +69,9 @@ the device's Settings > Security and privacy > More security settings > App pinn
 **turn on "Ask for PIN before unpinning"**. With it on, unpinning, including through
 Exit, goes to the lock screen.
 
-If the prompt is dismissed, the app asks again the next time the grid opens. Turn
+If the prompt is dismissed, the app asks again the next time the grid opens. Once you
+have unpinned it, through Exit or the system gesture, it does not ask again until you
+leave the app with home or recents and come back. Turn
 **Lock the app** off if you would rather pin by hand from the app switcher.
 
 Verified on Android 13: the folder picker still opens while the app is pinned, so you do

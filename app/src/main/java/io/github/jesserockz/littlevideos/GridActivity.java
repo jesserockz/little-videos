@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Child-facing home: a grid of videos and nothing else. Launcher activity. */
-public class GridActivity extends Activity {
+public class GridActivity extends AppActivity {
     /** How long the gear must be held before the parent gate opens. */
     private static final long GEAR_HOLD_MS = 2000;
     private static final float GEAR_DIM_ALPHA = 0.35f;
@@ -65,6 +65,8 @@ public class GridActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // A fresh launch, so an earlier Exit or unpin no longer applies.
+        Ui.resetPinState();
         prefs = new Prefs(this);
         thumbs = ThumbnailLoader.get(this);
         setContentView(R.layout.activity_grid);
@@ -169,9 +171,15 @@ public class GridActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (Ui.exitRequested) {
+            // Exit unpinned, and closing the task can lose out to the unpin's lock screen.
+            Ui.exitRequested = false;
+            finishAndRemoveTask();
+            return;
+        }
         Ui.applyImmersive(this);
         if (prefs.getLockApp()) {
-            Ui.pin(this);
+            Ui.pinUnlessUnpinned(this);
         }
         applyGridPrefs();
         resetGear();
@@ -316,6 +324,8 @@ public class GridActivity extends Activity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            // Focus comes back once the "Pin app?" prompt closes, so this records an accepted pin.
+            Ui.isPinned(this);
             Ui.applyImmersive(this);
         }
     }

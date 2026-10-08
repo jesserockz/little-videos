@@ -1,6 +1,5 @@
 package io.github.jesserockz.littlevideos;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -24,7 +23,7 @@ import android.widget.Toast;
 import java.util.List;
 
 /** Parent-facing settings. Plain framework widgets only. */
-public class SettingsActivity extends Activity {
+public class SettingsActivity extends AppActivity {
     private static final int REQ_PICK_FOLDER = 1001;
 
     private interface IntCallback {
@@ -138,6 +137,7 @@ public class SettingsActivity extends Activity {
                 R.string.settings_lock_on, R.string.settings_lock_off, on -> {
                     prefs.setLockApp(on);
                     if (on) {
+                        Ui.allowPinAgain();
                         Ui.pin(this);
                     } else {
                         Ui.unpin(this);
@@ -146,6 +146,7 @@ public class SettingsActivity extends Activity {
 
         // 11. Exit, the only way out of the app short of the system unpin gesture
         Row rowExit = addRow(R.string.settings_exit_title, v -> {
+            Ui.exitRequested = true;
             Ui.unpin(this);
             finishAndRemoveTask();
         });
