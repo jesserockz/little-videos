@@ -66,6 +66,16 @@ Builds:
     build:
       - export VERSION_NAME=$$VERSION$$ VERSION_CODE=$$VERCODE$$
       - ./build.sh
+  - versionName: 1.2.0
+    versionCode: 10200
+    commit: v1.2.0
+    output: dist/little-videos-$$VERSION$$.apk
+    sudo:
+      - apt-get update
+      - apt-get install -y openjdk-17-jdk-headless zip unzip binutils
+    build:
+      - export VERSION_NAME=$$VERSION$$ VERSION_CODE=$$VERCODE$$
+      - ./build.sh
 
 MaintainerNotes: |-
   No Gradle. The build runs aapt2, javac, d8, zipalign and apksigner straight
@@ -89,5 +99,5 @@ MaintainerNotes: |-
 # adding one Builds entry per release by hand.
 AutoUpdateMode: None
 UpdateCheckMode: Static
-CurrentVersion: 1.1.0
-CurrentVersionCode: 10100
+CurrentVersion: 1.2.0
+CurrentVersionCode: 10200
