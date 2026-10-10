@@ -58,7 +58,7 @@ jobs:
 
       - name: Draft the next release
         id: drafter
-        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9  # v7.7.0
+        uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0  # v7.10.0
         with:
           # Empty means resolve from labels as usual.
           version: ${{ steps.seed.outputs.version }}
@@ -189,7 +189,7 @@ jobs:
           head -n 1 draft/*
 
       - name: Upload the draft descriptor
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: draft-release
           path: draft/
