@@ -15,8 +15,8 @@ to work on it safely.
 
 ## Building and checking
 
-Needs the Android SDK (platform 35, build-tools 35.0.0) and JDK 17. JDK 21 builds
-but changes the APK hash, which breaks reproducibility.
+Needs the Android SDK (platform 35, build-tools 35.0.0) and JDK 21. Other JDKs
+build but change the APK hash, which breaks reproducibility.
 
 | Command                                   | When to run                               |
 |:------------------------------------------|:------------------------------------------|
