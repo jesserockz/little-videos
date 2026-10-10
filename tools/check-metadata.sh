@@ -21,7 +21,8 @@ ok()   { echo "  ok: $*"; }
 
 FL="fastlane/metadata/android/en-US"
 APP_ID="$(sed -n 's/^APP_ID="\(.*\)"$/\1/p' build.sh)"
-JDK="$(sed -n 's/^JDK_VERSION="${JDK_VERSION:-\([0-9]*\)}"$/\1/p' build.sh)"
+JDK_RE='s/^JDK_VERSION="${JDK_VERSION:-\([0-9]*\)}"$/\1/p'
+JDK="$(sed -n "$JDK_RE" build.sh)"
 BT_VER="$(sed -n 's/^BUILD_TOOLS_VERSION="\(.*\)"$/\1/p' build.sh)"
 SDK_VER="$(sed -n 's/^COMPILE_SDK="\(.*\)"$/\1/p' build.sh)"
 META="fdroid/$APP_ID.yml"
@@ -78,21 +79,18 @@ case "$LICENSE_ID" in
   *) ok "License is $LICENSE_ID" ;;
 esac
 
-grep -q "openjdk-$JDK-jdk" "$META" \
-  && ok "the recipe installs JDK $JDK, matching build.sh" \
-  || fail "the recipe does not install openjdk-$JDK-jdk, but build.sh requires JDK $JDK"
-
-# Every Builds entry has to agree with what build.sh would actually produce.
+# Every Builds entry has to agree with what build.sh would actually produce,
+# including the JDK: each entry installs the JDK its own tagged build.sh needs.
 # yq only converts YAML to JSON (-o=json is the mikefarah/yq v4 spelling); jq does the rest.
 if ! ENTRIES="$(yq -o=json '.' "$META" | jq -r '
-  ((.Builds // [])[] | [.versionName, .versionCode, .commit, .output, ((.build // []) | join(" "))]
+  ((.Builds // [])[] | [.versionName, .versionCode, .commit, .output, ((.build // []) | join(" ")), ((.sudo // []) | join(" "))]
     | map(. // "" | tostring) | join("\t")),
   (["CURRENT", .CurrentVersion, .CurrentVersionCode] | map(. // "" | tostring) | join("\t"))
 ')"; then
   fail "could not parse $META"
 else
   LAST_NAME=""; LAST_CODE=""
-  while IFS=$'\t' read -r NAME CODE COMMIT OUTPUT BUILD; do
+  while IFS=$'\t' read -r NAME CODE COMMIT OUTPUT BUILD SUDO; do
     if [ "$NAME" = "CURRENT" ]; then
       [ "$CODE" = "$LAST_NAME" ] && ok "CurrentVersion matches the newest Builds entry" \
         || fail "CurrentVersion is '$CODE', newest Builds entry is '$LAST_NAME'"
@@ -118,6 +116,25 @@ else
       *"VERSION_CODE=$CODE"*) ok "$NAME -> build stamps VERSION_CODE=$CODE" ;;
       *) fail "$NAME does not export VERSION_CODE=$CODE in its build commands" ;;
     esac
+    # Exactly one JDK package, and the one the tagged build.sh asks for.
+    JDKS="$(printf '%s\n' "$SUDO" | grep -oE 'openjdk-[0-9]+-jdk[A-Za-z-]*' || true)"
+    if [ "$(printf '%s' "$JDKS" | grep -c .)" != 1 ]; then
+      fail "$NAME must install exactly one openjdk-<N>-jdk package, found: ${JDKS:-none}"
+    else
+      ENTRY_JDK="$(printf '%s' "$JDKS" | sed 's/^openjdk-\([0-9]*\)-jdk.*$/\1/')"
+      if ! git rev-parse -q --verify "refs/tags/v$NAME^{commit}" > /dev/null 2>&1; then
+        ok "$NAME -> JDK check against build.sh skipped, tag v$NAME is not available locally"
+      else
+        TAG_JDK="$(git show "v$NAME:build.sh" 2>/dev/null | sed -n "$JDK_RE")"
+        if [ -z "$TAG_JDK" ]; then
+          ok "$NAME -> JDK check against build.sh skipped, v$NAME has no JDK_VERSION in build.sh"
+        elif [ "$TAG_JDK" = "$ENTRY_JDK" ]; then
+          ok "$NAME -> installs JDK $ENTRY_JDK, matching build.sh at v$NAME"
+        else
+          fail "$NAME installs JDK $ENTRY_JDK, but build.sh at v$NAME requires JDK $TAG_JDK"
+        fi
+      fi
+    fi
     [ -f "$FL/changelogs/$CODE.txt" ] && ok "$NAME -> changelogs/$CODE.txt exists" \
       || fail "$NAME has no changelog at $FL/changelogs/$CODE.txt"
   done <<< "$ENTRIES"

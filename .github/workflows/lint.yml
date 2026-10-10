@@ -37,6 +37,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Tags let the per-entry JDK check compare against each tagged build.sh.
+          fetch-depth: 0
 
       # The F-Droid recipe and build.sh can drift apart silently, and a
       # description over the length limit is invisible until submission.
