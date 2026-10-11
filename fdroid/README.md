@@ -116,7 +116,7 @@ version.
 | Locale                                             | `LC_ALL=C`, for stable glob and sort order         |
 | dex entry mtimes                                   | `touch` to `SOURCE_DATE_EPOCH` before zipping      |
 | zip extra fields                                   | `zip -X`, dropping the Unix timestamp extra field  |
-| JDK                                                | Major version 17, verified, build fails otherwise  |
+| JDK                                                | Major version 21, verified, build fails otherwise  |
 | Android toolchain                                  | build-tools 35.0.0, platform 35                    |
 
 Verified by `tools/verify-reproducible.sh`, which rebuilds an existing

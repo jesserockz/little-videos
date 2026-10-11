@@ -87,7 +87,7 @@ Subfolders are included by default, capped at 8 levels deep and 2000 files.
 
 ## Building
 
-Needs the Android SDK (platform 35, build-tools 35.0.0) and a JDK 17 or 21. No Gradle,
+Needs the Android SDK (platform 35, build-tools 35.0.0) and JDK 21. No Gradle,
 no network access, no dependency resolution.
 
 ```sh
@@ -124,7 +124,7 @@ script serves a local sideload build and a CI release build.
 | `VERSION_NAME`                        | `1.0`                                 | versionName and the `dist/` filename  |
 | `VERSION_CODE`                        | `1`                                   | versionCode                           |
 | `ALLOW_GENERATED_KEY`                 | unset                                 | In CI, opt in to a disposable key     |
-| `JDK_VERSION`                         | `17`                                  | Required JDK major version            |
+| `JDK_VERSION`                         | `21`                                  | Required JDK major version            |
 | `SOURCE_DATE_EPOCH`                   | commit date                           | Timestamp baked into the APK          |
 
 Two rules keep the two apart. With `CI` set and no keystore at `ANDROID_KEYSTORE`,
@@ -159,11 +159,12 @@ builds, then rebuilds with the clock, timezone and locale moved and diffs the
 unsigned and signed APKs. CI runs it on every build, so a regression fails the PR rather than
 surfacing as an F-Droid verification failure months later.
 
-The one input that is not self-correcting is the JDK. javac 17 and javac 21 emit
-different bytecode from these sources, so `build.sh` requires JDK 17 and fails
+The one input that is not self-correcting is the JDK. javac majors emit
+different bytecode from these sources, so `build.sh` requires JDK 21 and fails
 rather than quietly using another. Changing `JDK_VERSION`, the build-tools
 version or the compile SDK changes the output hash and needs a matching update to
-`fdroid/io.github.jesserockz.littlevideos.yml`.
+`fdroid/io.github.jesserockz.littlevideos.yml`. `tools/fdroid-add-build.sh` takes
+the JDK for a new entry from the released commit's `build.sh`.
 
 
 ### Opening it in Android Studio

@@ -42,8 +42,9 @@ Binaries: https://github.com/jesserockz/little-videos/releases/download/v%v/litt
 AllowedAPKSigningKeys: ce8a11d289bdf6f53d54428ed486f0d4a0574fd82ba271a5028e48dd6d5fc467
 
 # One entry per release, appended by tools/fdroid-add-build.sh. build.sh pins
-# everything that decides the output hash (TZ, LC_ALL, SOURCE_DATE_EPOCH, JDK 17)
-# and VERSION_CODE is major*10000 + minor*100 + patch, as in the release workflow.
+# everything that decides the output hash (TZ, LC_ALL, SOURCE_DATE_EPOCH, JDK),
+# and each entry installs the JDK its tagged build.sh requires. VERSION_CODE is
+# major*10000 + minor*100 + patch, as in the release workflow.
 # F-Droid fills in $$VERSION$$ and $$VERCODE$$ from each entry's fields.
 Builds:
   - versionName: 1.0.0
@@ -80,8 +81,10 @@ Builds:
 MaintainerNotes: |-
   No Gradle. The build runs aapt2, javac, d8, zipalign and apksigner straight
   from the SDK, driven by build.sh, and needs build-tools 35.0.0, platform 35
-  and JDK 17. build.sh fails rather than falling back to another JDK, because
-  javac 17 and javac 21 emit different bytecode and the APK would not verify.
+  and JDK 21 for current builds; older entries install the JDK their tag was
+  built with (17). build.sh fails rather than falling back to another JDK,
+  because different javac majors emit different bytecode and the APK would not
+  verify.
 
   build.sh also asserts that the built APK declares zero permissions and fails
   the build if any appear. That assertion is the point of the app.

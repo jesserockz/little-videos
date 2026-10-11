@@ -67,12 +67,12 @@ KS_PASS="${ANDROID_KEYSTORE_PASSWORD:-littlevideos}"
 KS_ALIAS="${ANDROID_KEY_ALIAS:-littlevideos}"
 APK="$DIST/little-videos-$VERSION_NAME$APK_SUFFIX.apk"
 
-# The JDK major version is a reproducibility input, not a detail: javac 17 and
-# javac 21 emit different bytecode for these same sources, so the APK hash
-# changes with the JDK. It is therefore pinned and verified rather than
-# discovered, and the Android toolchain will not accept anything newer than 21
-# anyway. Override only if you accept a different output hash.
-JDK_VERSION="${JDK_VERSION:-17}"
+# The JDK major version is a reproducibility input, not a detail: javac majors
+# emit different bytecode for these same sources, so the APK hash changes with
+# the JDK. It is therefore pinned and verified rather than discovered. It is an
+# LTS that Debian stable ships, so F-Droid can still install it when rebuilding
+# old tags. Override only if you accept a different output hash.
+JDK_VERSION="${JDK_VERSION:-21}"
 
 jdk_major() { "$1/bin/javac" -version 2>&1 | awk '{print $2}' | cut -d. -f1; }
 

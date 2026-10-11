@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 # Add a Builds entry for a released version to the F-Droid metadata.
 #
-#   tools/fdroid-add-build.sh 1.1.0
+#   tools/fdroid-add-build.sh 1.1.0 [commit]
 #
 # Edited as text, not round-tripped through a YAML parser: a parser would drop
 # every comment, and the comments record why AutoUpdateMode is off and why
 # Description lives in the app repo. The new entry is a copy of the last one
-# with only versionName, versionCode and commit substituted, so `sudo:`,
-# `output:` and `build:` (which use F-Droid's $$VERSION$$/$$VERCODE$$) carry
-# forward unchanged. Idempotent: a version already present is left alone.
+# with only versionName, versionCode and commit substituted, so `output:` and
+# `build:` (which use F-Droid's $$VERSION$$/$$VERCODE$$) carry forward
+# unchanged. The JDK in `sudo:` is the one exception: it is rewritten to the
+# JDK_VERSION in build.sh at [commit], or in the working tree when no commit is
+# given, so the entry installs what that release is built with. Idempotent: a
+# version already present is left alone.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <MAJOR.MINOR.PATCH>" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "usage: $0 <MAJOR.MINOR.PATCH> [commit]" >&2
   exit 2
 fi
 VERSION="$1"
+COMMIT="${2:-}"
 if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
   echo "error: '$VERSION' is not major.minor.patch" >&2
   exit 1
@@ -42,6 +46,18 @@ if grep -qE "^[[:space:]]*- versionName: ${VERSION_RE}[[:space:]]*$" "$FILE"; th
   echo "$VERSION is already in $NAME, nothing to do"
   exit 0
 fi
+
+JDK_RE='s/^JDK_VERSION="${JDK_VERSION:-\([0-9]*\)}"$/\1/p'
+if [ -n "$COMMIT" ]; then
+  if ! BUILD_SH="$(git -C "$ROOT" show "$COMMIT:build.sh" 2>&1)"; then
+    echo "error: could not read build.sh at '$COMMIT': $BUILD_SH" >&2
+    exit 1
+  fi
+else
+  BUILD_SH="$(cat "$ROOT/build.sh")"
+fi
+JDK="$(printf '%s\n' "$BUILD_SH" | sed -n "$JDK_RE")"
+[ -n "$JDK" ] || { echo "error: could not read JDK_VERSION out of build.sh${COMMIT:+ at $COMMIT}" >&2; exit 1; }
 
 # Line range [START, END) of the last Builds entry, trailing blanks excluded.
 if ! RANGE="$(awk '
@@ -72,7 +88,7 @@ fi
 # Substitute only the version-bearing fields, first matching rule per line. A
 # blanket replace would also rewrite "major*10000" in a comment.
 OUT="$(awk -v s="$START" -v e="$END" -v old="$PREV" -v oc="$PREV_CODE" \
-  -v new="$VERSION" -v nc="$CODE" '
+  -v new="$VERSION" -v nc="$CODE" -v jdk="$JDK" '
   function tail(line, suffix) { # line minus trailing space and the suffix
     sub(/[ \t]+$/, "", line)
     return substr(line, 1, length(line) - length(suffix))
@@ -83,6 +99,7 @@ OUT="$(awk -v s="$START" -v e="$END" -v old="$PREV" -v oc="$PREV_CODE" \
     if (line ~ ("^[ \t]*- versionName:[ \t]*" o "[ \t]*$")) return tail(line, old) new
     if (line ~ ("^[ \t]*versionCode:[ \t]*" c "[ \t]*$")) return tail(line, oc) nc
     if (line ~ ("^[ \t]*commit:[ \t]*v?" o "[ \t]*$")) return tail(line, old) new
+    gsub(/openjdk-[0-9]+-jdk/, "openjdk-" jdk "-jdk", line)
     return line
   }
   { L[NR] = $0 }

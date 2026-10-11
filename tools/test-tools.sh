@@ -155,6 +155,8 @@ awk -v entry="$LAST_ENTRY" '
   /^CurrentVersionCode:/ {print "CurrentVersionCode: 10000"; next}
   {print}
 ' "fdroid/$META_NAME" > "$FIXTURE"
+# The fixture's entry was built with 17 whatever the live metadata says now.
+sed -i 's/openjdk-[0-9]*-jdk/openjdk-17-jdk/' "$FIXTURE"
 
 ab_tree() { # name -> prints a throwaway tree holding just what the tools read
   local T="$TMP_ROOT/ab-$1"
@@ -166,6 +168,9 @@ ab_tree() { # name -> prints a throwaway tree holding just what the tools read
   echo "$T"
 }
 ab() { (cd "$AB" && ./tools/fdroid-add-build.sh "$@" 2>&1); }
+# Local identity and no signing, so the tests do not depend on global git config.
+gq() { git -C "$1" -c user.name=tester -c user.email=tester@example.invalid \
+  -c commit.gpgsign=false -c tag.gpgsign=false "${@:2}"; }
 
 AB="$(ab_tree main)"
 META="$AB/fdroid/$META_NAME"
@@ -187,13 +192,15 @@ check "bumps CurrentVersionCode" "CurrentVersionCode: 10100" "$(grep '^CurrentVe
 
 K="$(grep -c '^      # VERSION_CODE is major\*10000 + minor\*100 + patch\.$' "$META")"
 check "leaves the formula comment alone" "2" "$K"
-check "carries the toolchain forward" "2" "$(grep -c 'openjdk-17-jdk-headless' "$META")"
+check "installs the JDK from build.sh" "1" "$(grep -c 'openjdk-21-jdk-headless' "$META")"
+check "leaves the older entry on its JDK" "1" "$(grep -c 'openjdk-17-jdk-headless' "$META")"
+check "build.sh in the tree pins JDK 21" "1" "$(grep -c '^JDK_VERSION="${JDK_VERSION:-21}"$' "$AB/build.sh")"
 
 # Only the two Current* lines may be removed, and the new entry must equal the
 # old one once its version and code are mapped back.
 diff "$AB/orig.yml" "$META" > "$AB/diff.txt" || true
 check "removes only the Current* lines" "$(printf '< CurrentVersion: 1.0.0\n< CurrentVersionCode: 10000')" "$(grep '^<' "$AB/diff.txt")"
-sed -n '/^  - versionName: 1.1.0$/,/^      - .\/build.sh$/p' "$META" | sed 's/1\.1\.0/1.0.0/g; s/10100/10000/g' > "$AB/new-entry.txt"
+sed -n '/^  - versionName: 1.1.0$/,/^      - .\/build.sh$/p' "$META" | sed 's/1\.1\.0/1.0.0/g; s/10100/10000/g; s/openjdk-21-jdk/openjdk-17-jdk/' > "$AB/new-entry.txt"
 sed -n '/^  - versionName: 1.0.0$/,/^      - .\/build.sh$/p' "$AB/orig.yml" > "$AB/old-entry.txt"
 check "new entry is the old one with only the version fields changed" "$(cat "$AB/old-entry.txt")" "$(cat "$AB/new-entry.txt")"
 check "inserts right after the last entry" "$(printf '      - ./build.sh\n  - versionName: 1.1.0')" "$(grep -B1 '^  - versionName: 1.1.0$' "$META")"
@@ -217,9 +224,9 @@ check "refuses a version that would collide" "yes" "$(case "$OUT" in *collide*) 
 ab 1.100.0 > /dev/null; check "a colliding version exits 1" "1" "$?"
 
 ab > /dev/null; check "no argument exits 2" "2" "$?"
-ab 1.2.0 extra > /dev/null; check "extra argument exits 2" "2" "$?"
+ab 1.2.0 HEAD extra > /dev/null; check "extra argument exits 2" "2" "$?"
 OUT="$(ab || true)"
-check "usage is printed" "usage: ./tools/fdroid-add-build.sh <MAJOR.MINOR.PATCH>" "$OUT"
+check "usage is printed" "usage: ./tools/fdroid-add-build.sh <MAJOR.MINOR.PATCH> [commit]" "$OUT"
 
 # A second release is appended after the first, not before it.
 OUT="$(ab 1.2.0)"
@@ -227,6 +234,51 @@ check "adds a later version" "added 1.2.0 (10200) to $META_NAME" "$OUT"
 check "orders entries oldest to newest" "$(printf '1.0.0\n1.1.0\n1.2.0')" "$(sed -n 's/^  - versionName: //p' "$META")"
 check "later version copies from the newest entry" "3" "$(grep -c '^      - export VERSION_NAME=\$\$VERSION\$\$ VERSION_CODE=\$\$VERCODE\$\$$' "$META")"
 check "later version bumps CurrentVersionCode" "CurrentVersionCode: 10200" "$(grep '^CurrentVersionCode:' "$META")"
+
+# The commit argument decides the JDK. c21 is the real build.sh, c25 pins 25,
+# cnone has no JDK_VERSION line.
+AB="$(ab_tree commit)"
+META="$AB/fdroid/$META_NAME"
+gq "$AB" init -q -b main
+gq "$AB" add build.sh
+gq "$AB" commit -q -m c21
+C21="$(gq "$AB" rev-parse HEAD)"
+sed -i 's/^JDK_VERSION="${JDK_VERSION:-21}"$/JDK_VERSION="${JDK_VERSION:-25}"/' "$AB/build.sh"
+gq "$AB" commit -q -am c25
+C25="$(gq "$AB" rev-parse HEAD)"
+sed -i '/^JDK_VERSION=/d' "$AB/build.sh"
+gq "$AB" commit -q -am cnone
+CNONE="$(gq "$AB" rev-parse HEAD)"
+cp "$ROOT/build.sh" "$AB/build.sh"
+cp "$META" "$AB/orig.yml"
+
+OUT="$(ab 1.1.0 "$C25")"
+check "a commit argument is accepted" "added 1.1.0 (10100) to $META_NAME" "$OUT"
+check "the new entry installs the commit's JDK" "1" "$(grep -c 'openjdk-25-jdk-headless' "$META")"
+check "the older entry keeps its JDK" "1" "$(grep -c 'openjdk-17-jdk-headless' "$META")"
+check "no stale JDK is left in the new entry" "0" "$(sed -n '/^  - versionName: 1.1.0$/,$p' "$META" | grep -c 'openjdk-17')"
+
+OUT="$(ab 1.2.0 "$C21")"
+check "a commit with the default JDK installs it" "added 1.2.0 (10200) to $META_NAME" "$OUT"
+check "the commit's JDK wins over the working tree's" "1" "$(sed -n '/^  - versionName: 1.2.0$/,$p' "$META" | grep -c 'openjdk-21-jdk-headless')"
+
+cp "$AB/orig.yml" "$META"
+OUT="$(ab 1.1.0 no-such-commit)"
+check "an unknown commit is an error" "yes" "$(case "$OUT" in "error: could not read build.sh at 'no-such-commit'"*) echo yes ;; *) echo no ;; esac)"
+ab 1.1.0 no-such-commit > /dev/null; check "an unknown commit exits 1" "1" "$?"
+check "an unknown commit leaves the file alone" "yes" "$(cmp -s "$AB/orig.yml" "$META" && echo yes || echo no)"
+
+OUT="$(ab 1.1.0 "$CNONE")"
+check "a build.sh without JDK_VERSION is an error" "error: could not read JDK_VERSION out of build.sh at $CNONE" "$OUT"
+check "a missing JDK_VERSION leaves the file alone" "yes" "$(cmp -s "$AB/orig.yml" "$META" && echo yes || echo no)"
+
+sed -i '/^JDK_VERSION=/d' "$AB/build.sh"
+OUT="$(ab 1.1.0)"
+check "no JDK_VERSION in the working tree is an error" "error: could not read JDK_VERSION out of build.sh" "$OUT"
+cp "$ROOT/build.sh" "$AB/build.sh"
+
+# Already recorded: no commit lookup at all.
+ab 1.0.0 no-such-commit > /dev/null; check "an existing version ignores the commit" "0" "$?"
 
 # An entry that runs to the end of the file, with no Current* lines at all.
 AB="$(ab_tree eof)"
@@ -270,6 +322,47 @@ AB="$(ab_tree cmgood)"
 OUT="$(cm)"
 check "a clean copy is consistent" "metadata is consistent" "$(printf '%s\n' "$OUT" | tail -1)"
 check "reads each Builds field" "yes" "$(printf '%s\n' "$OUT" | grep -q 'ok: 1.0.0 -> output dist/little-videos-1.0.0.apk' && echo yes || echo no)"
+
+# JDK per entry. A throwaway repo whose tag v1.0.0 carries the real build.sh
+# (JDK 21) unless the case rewrites it.
+cm_tag() { # name, build.sh sed expression -> tree with tag v1.0.0 on a rewritten build.sh
+  AB="$(ab_tree "$1")"
+  gq "$AB" init -q -b main
+  sed -i "$2" "$AB/build.sh"
+  gq "$AB" add build.sh
+  gq "$AB" commit -q -m tagged
+  gq "$AB" tag v1.0.0
+  cp "$ROOT/build.sh" "$AB/build.sh"
+}
+
+AB="$(ab_tree cmnojdk)"
+sed -i 's/openjdk-17-jdk-headless //' "$AB/fdroid/$META_NAME"
+OUT="$(cm)"
+check "an entry with no JDK fails" "yes" "$(printf '%s\n' "$OUT" | grep -q 'FAIL: 1.0.0 must install exactly one openjdk-<N>-jdk package, found: none' && echo yes || echo no)"
+
+AB="$(ab_tree cmtwojdk)"
+sed -i 's/openjdk-17-jdk-headless /openjdk-17-jdk-headless openjdk-21-jdk /' "$AB/fdroid/$META_NAME"
+OUT="$(cm)"
+check "an entry with two JDKs fails" "yes" "$(printf '%s\n' "$OUT" | grep -q 'FAIL: 1.0.0 must install exactly one openjdk-<N>-jdk package, found: openjdk-17-jdk-headless' && echo yes || echo no)"
+
+AB="$(ab_tree cmnotag)"
+OUT="$(cm)"
+check "an absent tag skips the JDK check" "yes" "$(printf '%s\n' "$OUT" | grep -q 'ok: 1.0.0 -> JDK check against build.sh skipped, tag v1.0.0 is not available locally' && echo yes || echo no)"
+check "an absent tag is not a failure" "metadata is consistent" "$(printf '%s\n' "$OUT" | tail -1)"
+
+cm_tag cmtagok 's/^JDK_VERSION=.*$/JDK_VERSION="${JDK_VERSION:-17}"/'
+OUT="$(cm)"
+check "a tag whose build.sh matches passes" "yes" "$(printf '%s\n' "$OUT" | grep -q 'ok: 1.0.0 -> installs JDK 17, matching build.sh at v1.0.0' && echo yes || echo no)"
+check "a matching tag is consistent" "metadata is consistent" "$(printf '%s\n' "$OUT" | tail -1)"
+
+cm_tag cmtagbad 's/^JDK_VERSION=.*$/JDK_VERSION="${JDK_VERSION:-21}"/'
+OUT="$(cm)"
+check "a tag whose build.sh differs fails" "yes" "$(printf '%s\n' "$OUT" | grep -q 'FAIL: 1.0.0 installs JDK 17, but build.sh at v1.0.0 requires JDK 21' && echo yes || echo no)"
+
+cm_tag cmtagnone '/^JDK_VERSION=/d'
+OUT="$(cm)"
+check "a tag with no JDK_VERSION skips the JDK check" "yes" "$(printf '%s\n' "$OUT" | grep -q 'ok: 1.0.0 -> JDK check against build.sh skipped, v1.0.0 has no JDK_VERSION in build.sh' && echo yes || echo no)"
+check "a tag with no JDK_VERSION is not a failure" "metadata is consistent" "$(printf '%s\n' "$OUT" | tail -1)"
 
 AB="$(ab_tree cmcode)"
 sed -i 's/^    versionCode: 10000$/    versionCode: 99999/' "$AB/fdroid/$META_NAME"
