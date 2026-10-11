@@ -1,1 +1,2 @@
+- Pin the build JDK to 21 (#13)
 - ci: bump the github-actions group across 1 directory with 3 updates (#12) @[dependabot[bot]](https://github.com/apps/dependabot)
